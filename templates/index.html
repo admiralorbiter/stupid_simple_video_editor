@@ -6,30 +6,75 @@
 <style>
     /* Sidebar styles */
     .sidebar {
-        height: calc(100vh - 56px);  /* Adjust based on your navbar height */
+        height: calc(100vh - 56px);
         width: 300px;
         position: fixed;
         left: 0;
         transition: 0.3s;
-        background: #f8f9fa;
-        border-right: 1px solid #dee2e6;
+        background: var(--pale-dogwood);
+        border-right: 1px solid var(--redwood);
         overflow-y: auto;
     }
 
-    .sidebar.collapsed {
-        width: 0;
-        border: none;
+    /* Folder selection area */
+    .folder-selection {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--redwood);
+        background: var(--dark-purple);
+        color: var(--pale-dogwood);
     }
 
-    /* Main content area */
-    .main-content {
-        margin-left: 300px;
-        transition: 0.3s;
-        padding: 20px;
+    /* Video list item styles */
+    .video-list-item {
+        padding: 1rem;
+        border-bottom: 1px solid var(--redwood);
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        background: white;
+    }
+
+    .video-list-item:hover {
+        background: var(--pale-dogwood);
+        transform: translateX(5px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .video-list-item.selected {
+        background: var(--dark-purple);
+        color: var(--pale-dogwood);
+        transform: translateX(5px);
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    .video-list-item.selected small {
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* Button styles */
+    .btn-library {
+        background-color: var(--redwood);
+        color: var(--pale-dogwood);
+        border: none;
+        transition: background-color 0.3s ease;
+    }
+
+    .btn-library:hover {
+        background-color: var(--eggplant);
+        color: var(--pale-dogwood);
+    }
+
+    /* Collapsed states */
+    .sidebar.collapsed {
+        width: 0;
+        overflow: hidden;
     }
 
     .main-content.expanded {
         margin-left: 0;
+    }
+
+    .sidebar-toggle.collapsed {
+        left: 0;
     }
 
     /* Toggle button */
@@ -39,46 +84,37 @@
         top: 70px;
         transition: 0.3s;
         z-index: 1000;
-        background: #fff;
-        border: 1px solid #dee2e6;
-        border-left: none;
-        padding: 8px;
-    }
-
-    .sidebar-toggle.collapsed {
-        left: 0;
-    }
-
-    /* Video list item styles */
-    .video-list-item {
-        padding: 10px;
-        border-bottom: 1px solid #dee2e6;
+        background: var(--dark-purple);
+        color: var(--pale-dogwood);
+        border: none;
+        padding: 0.5rem;
+        border-radius: 0 0.5rem 0.5rem 0;
         cursor: pointer;
     }
 
-    .video-list-item:hover {
-        background: #e9ecef;
+    .sidebar-toggle:hover {
+        background: var(--eggplant);
     }
 
-    .video-list-item.selected {
-        background: #0d6efd;
-        color: white;
+    /* Ensure content doesn't jump during transition */
+    .sidebar, .main-content, .sidebar-toggle {
+        transition: all 0.3s ease;
     }
 
-    .video-list-item.selected small {
-        color: rgba(255, 255, 255, 0.8);
-    }
-
-    /* Folder selection area */
-    .folder-selection {
-        padding: 15px;
-        border-bottom: 1px solid #dee2e6;
+    /* Main content area */
+    .main-content {
+        margin-left: 300px;
+        transition: 0.3s;
+        padding: 2rem;
         background: white;
     }
 
+    /* Loading indicator */
     .htmx-indicator {
         display: none;
+        color: var(--redwood);
     }
+    
     .htmx-request .htmx-indicator {
         display: inline;
     }
@@ -101,31 +137,29 @@
               hx-indicator="#loading-indicator">
             <div class="d-flex gap-2 flex-column">
                 <button type="button" 
-                        class="btn btn-outline-primary btn-sm" 
+                        class="btn btn-library" 
                         id="browse-button">
                     <i class="bi bi-folder2-open me-2"></i>Browse Folder
                 </button>
                 <button type="submit" 
-                        class="btn btn-primary btn-sm" 
+                        class="btn btn-library" 
                         id="scan-button" 
                         style="display: none;">
                     <i class="bi bi-search me-2"></i>Scan Folder
                 </button>
+                <button type="button" 
+                        class="btn btn-library" 
+                        id="clipsFolder">
+                    <i class="bi bi-folder2-open me-2"></i>Set Clips Folder
+                </button>
                 <div id="loading-indicator" class="htmx-indicator">
-                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                    <div class="spinner-border spinner-border-sm"></div>
                     Scanning...
                 </div>
             </div>
             <div id="selected-folder" class="mt-2 text-muted small"></div>
+            <div id="selected-clips-folder" class="mt-2 text-muted small"></div>
         </form>
-    </div>
-
-    <!-- Add this after the Browse Folder button -->
-    <div class="mb-3">
-        <button id="clipsFolder" class="btn btn-outline-secondary">
-            <i class="bi bi-folder2-open me-2"></i>Set Clips Folder
-        </button>
-        <div id="selected-clips-folder" class="text-muted small mt-1"></div>
     </div>
 
     <!-- Video List -->

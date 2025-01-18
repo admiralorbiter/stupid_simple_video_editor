@@ -1,4 +1,4 @@
-# AlliedMastercomputer
+# Illcutyou
 
 A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 
