@@ -1,18 +1,176 @@
-<div class="container-fluid">
+<div class="container-fluid p-4">
     <h4>{{ video.title }}</h4>
-    <div class="row">
+    
+    <!-- Video Player Section -->
+    <div class="row mb-4">
         <div class="col">
-            <!-- Video preview and editing controls will go here -->
-            <div class="card">
-                <div class="card-body">
-                    <p class="text-muted">
-                        File: {{ video.file_path }}<br>
-                        Size: {{ video.size_mb }}MB<br>
-                        Duration: {{ video.duration }}
-                    </p>
-                    <!-- Add your video editing controls here -->
+            <video id="videoPlayer" 
+                   class="w-100" 
+                   controls
+                   style="max-height: 70vh; background: #000;">
+                <source src="{{ video.video_url }}" type="video/mp4">
+                Your browser does not support the video tag.
+            </video>
+        </div>
+    </div>
+
+    <!-- Clipping Controls -->
+    <div class="card">
+        <div class="card-body">
+            <form hx-post="{{ url_for('create_clip') }}"
+                  hx-target="#clipResult"
+                  class="mb-3">
+                <input type="hidden" name="video_id" value="{{ video.id }}">
+                
+                <!-- Time Controls -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label for="start_time" class="form-label">Start Time</label>
+                        <div class="input-group">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="start_time" 
+                                   name="start_time" 
+                                   placeholder="00:00">
+                            <button type="button" 
+                                    class="btn btn-primary" 
+                                    onclick="setCurrentTime('start_time')">
+                                Set Current
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label for="end_time" class="form-label">End Time</label>
+                        <div class="input-group">
+                            <input type="text" 
+                                   class="form-control" 
+                                   id="end_time" 
+                                   name="end_time" 
+                                   placeholder="00:00">
+                            <button type="button" 
+                                    class="btn btn-primary" 
+                                    onclick="setCurrentTime('end_time')">
+                                Set Current
+                            </button>
+                        </div>
+                    </div>
                 </div>
+
+                <!-- Clip Name -->
+                <div class="mb-3">
+                    <label for="clip_name" class="form-label">Clip Name</label>
+                    <input type="text" 
+                           class="form-control" 
+                           id="clip_name" 
+                           name="clip_name" 
+                           required>
+                </div>
+
+                <!-- Preview Controls -->
+                <div class="btn-group mb-3">
+                    <button type="button" 
+                            class="btn btn-outline-secondary" 
+                            onclick="previewClip()">
+                        Preview Clip
+                    </button>
+                    <button type="button" 
+                            class="btn btn-outline-secondary" 
+                            onclick="resetPreview()">
+                        Reset Preview
+                    </button>
+                </div>
+
+                <!-- Create Clip Button -->
+                <div>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-scissors me-2"></i>Create Clip
+                    </button>
+                </div>
+            </form>
+
+            <!-- Result Area -->
+            <div id="clipResult"></div>
+
+            <!-- Video Info -->
+            <div class="mt-4">
+                <h6>Video Information</h6>
+                <small class="text-muted">
+                    <div>File: {{ video.file_path }}</div>
+                    {% if video.size_mb %}<div>Size: {{ video.size_mb }}MB</div>{% endif %}
+                    {% if video.duration %}<div>Duration: {{ video.duration }}</div>{% endif %}
+                </small>
             </div>
         </div>
     </div>
-</div> 
+</div>
+
+<script>
+// Convert seconds to HH:MM:SS format
+function formatTime(seconds) {
+    const pad = (num) => String(num).padStart(2, '0');
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    
+    if (hours > 0) {
+        return `${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
+    }
+    return `${pad(minutes)}:${pad(secs)}`;
+}
+
+// Set current video time to input field
+function setCurrentTime(inputId) {
+    const video = document.getElementById('videoPlayer');
+    const input = document.getElementById(inputId);
+    input.value = formatTime(video.currentTime);
+}
+
+// Preview the clip by setting video start/end times
+function previewClip() {
+    const video = document.getElementById('videoPlayer');
+    const startTime = document.getElementById('start_time').value;
+    const endTime = document.getElementById('end_time').value;
+    
+    // Convert time format to seconds
+    const startSeconds = timeToSeconds(startTime);
+    const endSeconds = timeToSeconds(endTime);
+    
+    if (startSeconds !== null && endSeconds !== null) {
+        video.currentTime = startSeconds;
+        video.play();
+        
+        // Stop video at end time
+        const checkEnd = setInterval(() => {
+            if (video.currentTime >= endSeconds) {
+                video.pause();
+                clearInterval(checkEnd);
+            }
+        }, 100);
+    }
+}
+
+// Convert HH:MM:SS or MM:SS to seconds
+function timeToSeconds(timeStr) {
+    const parts = timeStr.split(':').map(Number);
+    if (parts.length === 3) {
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    } else if (parts.length === 2) {
+        return parts[0] * 60 + parts[1];
+    }
+    return null;
+}
+
+// Reset video to beginning
+function resetPreview() {
+    const video = document.getElementById('videoPlayer');
+    video.currentTime = 0;
+    video.pause();
+}
+
+// Update current time display
+document.getElementById('videoPlayer').addEventListener('timeupdate', function() {
+    const currentTime = formatTime(this.currentTime);
+    // Optional: Update a time display element
+    // document.getElementById('currentTime').textContent = currentTime;
+});
+</script> 
