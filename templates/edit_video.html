@@ -1,0 +1,18 @@
+<div class="container-fluid">
+    <h4>{{ video.title }}</h4>
+    <div class="row">
+        <div class="col">
+            <!-- Video preview and editing controls will go here -->
+            <div class="card">
+                <div class="card-body">
+                    <p class="text-muted">
+                        File: {{ video.file_path }}<br>
+                        Size: {{ video.size_mb }}MB<br>
+                        Duration: {{ video.duration }}
+                    </p>
+                    <!-- Add your video editing controls here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div> 

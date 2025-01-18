@@ -1,0 +1,18 @@
+{% if videos %}
+    {% for video in videos %}
+    <div class="video-list-item" 
+         data-video-id="{{ video.id }}"
+         onclick="loadVideoEditor({{ video.id }})">
+        <div class="fw-bold">{{ video.title }}</div>
+        <small class="text-muted">
+            {% if video.size_mb %}Size: {{ video.size_mb }}MB{% endif %}
+            {% if video.duration %}<br>Duration: {{ video.duration }}{% endif %}
+            {% if video.created_at %}<br>Added: {{ video.created_at|datetime }}{% endif %}
+        </small>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="p-3 text-center text-muted">
+        <p>No videos found. Select a folder to scan for videos.</p>
+    </div>
+{% endif %} 

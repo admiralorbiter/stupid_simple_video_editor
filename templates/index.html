@@ -1,11 +1,191 @@
 {% extends "base.html" %}
 
-{% block title %}Flask Login{% endblock %}
+{% block title %}Video Library{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}">
+<style>
+    /* Sidebar styles */
+    .sidebar {
+        height: calc(100vh - 56px);  /* Adjust based on your navbar height */
+        width: 300px;
+        position: fixed;
+        left: 0;
+        transition: 0.3s;
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        overflow-y: auto;
+    }
+
+    .sidebar.collapsed {
+        width: 0;
+        border: none;
+    }
+
+    /* Main content area */
+    .main-content {
+        margin-left: 300px;
+        transition: 0.3s;
+        padding: 20px;
+    }
+
+    .main-content.expanded {
+        margin-left: 0;
+    }
+
+    /* Toggle button */
+    .sidebar-toggle {
+        position: fixed;
+        left: 300px;
+        top: 70px;
+        transition: 0.3s;
+        z-index: 1000;
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-left: none;
+        padding: 8px;
+    }
+
+    .sidebar-toggle.collapsed {
+        left: 0;
+    }
+
+    /* Video list item styles */
+    .video-list-item {
+        padding: 10px;
+        border-bottom: 1px solid #dee2e6;
+        cursor: pointer;
+    }
+
+    .video-list-item:hover {
+        background: #e9ecef;
+    }
+
+    .video-list-item.selected {
+        background: #0d6efd;
+        color: white;
+    }
+
+    .video-list-item.selected small {
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    /* Folder selection area */
+    .folder-selection {
+        padding: 15px;
+        border-bottom: 1px solid #dee2e6;
+        background: white;
+    }
+
+    .htmx-indicator {
+        display: none;
+    }
+    .htmx-request .htmx-indicator {
+        display: inline;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
-<h1>Flask Starter Code</h1>
+<!-- Sidebar Toggle Button -->
+<button class="sidebar-toggle btn btn-sm" onclick="toggleSidebar()">
+    <i class="bi bi-chevron-left" id="toggle-icon"></i>
+</button>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <!-- Folder Selection -->
+    <div class="folder-selection">
+        <h6 class="mb-3">Video Library</h6>
+        <form hx-post="/select-folder" 
+              hx-target="#video-list"
+              hx-indicator="#loading-indicator">
+            <div class="d-flex gap-2 flex-column">
+                <button type="button" 
+                        class="btn btn-outline-primary btn-sm" 
+                        id="browse-button">
+                    <i class="bi bi-folder2-open me-2"></i>Browse Folder
+                </button>
+                <button type="submit" 
+                        class="btn btn-primary btn-sm" 
+                        id="scan-button" 
+                        style="display: none;">
+                    <i class="bi bi-search me-2"></i>Scan Folder
+                </button>
+                <div id="loading-indicator" class="htmx-indicator">
+                    <div class="spinner-border spinner-border-sm text-primary"></div>
+                    Scanning...
+                </div>
+            </div>
+            <div id="selected-folder" class="mt-2 text-muted small"></div>
+        </form>
+    </div>
+
+    <!-- Video List -->
+    <div id="video-list">
+        {% include 'video_list.html' %}
+    </div>
+</div>
+
+<!-- Main Content -->
+<div class="main-content" id="main-content">
+    <div id="editor-content">
+        <!-- Initial state or selected video editor will be loaded here -->
+        <div class="text-center text-muted">
+            <p>Select a video from the list to edit</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const mainContent = document.getElementById('main-content');
+    const toggleBtn = document.querySelector('.sidebar-toggle');
+    const toggleIcon = document.getElementById('toggle-icon');
+    
+    sidebar.classList.toggle('collapsed');
+    mainContent.classList.toggle('expanded');
+    toggleBtn.classList.toggle('collapsed');
+    
+    if (sidebar.classList.contains('collapsed')) {
+        toggleIcon.classList.replace('bi-chevron-left', 'bi-chevron-right');
+    } else {
+        toggleIcon.classList.replace('bi-chevron-right', 'bi-chevron-left');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const browseButton = document.getElementById('browse-button');
+    const scanButton = document.getElementById('scan-button');
+    const selectedFolder = document.getElementById('selected-folder');
+
+    browseButton.addEventListener('click', async function(e) {
+        e.preventDefault();
+        try {
+            const response = await fetch('/browse-folder');
+            const data = await response.json();
+            
+            if (data.status === 'success') {
+                selectedFolder.textContent = `Selected: ${data.folder}`;
+                scanButton.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Error selecting folder:', error);
+        }
+    });
+});
+
+// Function to load video editor
+function loadVideoEditor(videoId) {
+    htmx.ajax('GET', `/edit-video/${videoId}`, '#editor-content');
+    
+    // Update selected state in the list
+    document.querySelectorAll('.video-list-item').forEach(item => {
+        item.classList.remove('selected');
+    });
+    document.querySelector(`[data-video-id="${videoId}"]`).classList.add('selected');
+}
+</script>
 {% endblock %}
