@@ -81,6 +81,21 @@ def init_routes(app):
                     FOREIGN KEY (video_id) REFERENCES videos (id)
                 )
             ''')
+            
+            # Create clips_backup table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS clips_backup (
+                    id INTEGER PRIMARY KEY,
+                    video_id INTEGER NOT NULL,
+                    clip_name TEXT NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    clip_path TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (video_id) REFERENCES videos (id)
+                )
+            ''')
+            
             conn.commit()
         finally:
             conn.close()
@@ -313,20 +328,19 @@ def init_routes(app):
         start_time = request.form.get('start_time')
         end_time = request.form.get('end_time')
         
-        clips_folder = session.get('clips_folder')
-        if not clips_folder:
-            return """
-                <div class="alert alert-danger">
-                    Please select a destination folder for clips first.
-                </div>
-            """
-        
         if not all([video_id, clip_name, start_time, end_time]):
             return """
                 <div class="alert alert-danger">
                     All fields are required.
                 </div>
             """
+        
+        print("Form data received:", {
+            'video_id': video_id,
+            'clip_name': clip_name,
+            'start_time': start_time,
+            'end_time': end_time
+        })
         
         try:
             conn = get_db_connection()
@@ -340,14 +354,15 @@ def init_routes(app):
                     </div>
                 """
             
-            # Use the selected clips folder
-            os.makedirs(clips_folder, exist_ok=True)
+            # Create clips directory if it doesn't exist
+            clips_dir = os.path.join('static', 'clips')
+            os.makedirs(clips_dir, exist_ok=True)
             
             # Generate unique filename for the clip
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             safe_name = "".join(c for c in clip_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             output_filename = f'{safe_name}_{timestamp}.mp4'
-            output_path = os.path.join(clips_folder, output_filename)
+            output_path = os.path.join(clips_dir, output_filename)
             
             # Build FFmpeg command
             command = [
@@ -399,3 +414,304 @@ def init_routes(app):
             """
         finally:
             conn.close() 
+
+    @app.route('/clips', methods=['GET'])
+    @app.route('/clips/<int:video_id>', methods=['GET'])
+    def get_clips(video_id=None):
+        """Get all clips or clips for a specific video"""
+        try:
+            conn = get_db_connection()
+            
+            if video_id:
+                # Get clips for specific video with video title
+                clips = conn.execute('''
+                    SELECT 
+                        c.id,
+                        c.clip_name,
+                        c.start_time,
+                        c.end_time,
+                        c.clip_path,
+                        c.created_at,
+                        v.title as video_title
+                    FROM clips c
+                    JOIN videos v ON c.video_id = v.id
+                    WHERE c.video_id = ?
+                    ORDER BY c.created_at DESC
+                ''', (video_id,)).fetchall()
+            else:
+                # Get all clips with their video titles
+                clips = conn.execute('''
+                    SELECT 
+                        c.id,
+                        c.clip_name,
+                        c.start_time,
+                        c.end_time,
+                        c.clip_path,
+                        c.created_at,
+                        v.title as video_title
+                    FROM clips c
+                    JOIN videos v ON c.video_id = v.id
+                    ORDER BY c.created_at DESC
+                ''').fetchall()
+            
+            # Convert to list of dictionaries for easier template handling
+            clips_data = [{
+                'id': clip[0],
+                'name': clip[1],
+                'start_time': clip[2],
+                'end_time': clip[3],
+                'path': clip[4],
+                'created_at': clip[5],
+                'video_title': clip[6]
+            } for clip in clips]
+            
+            # Return different templates based on request type
+            if request.headers.get('HX-Request'):
+                # Return partial template for HTMX requests
+                return render_template('clips_list.html', clips=clips_data)
+            else:
+                # Return full page for direct visits
+                return render_template('clips.html', clips=clips_data)
+            
+        except Exception as e:
+            print(f"Error fetching clips: {str(e)}")
+            return """
+                <div class="alert alert-danger">
+                    Error fetching clips: {str(e)}
+                </div>
+            """
+        finally:
+            conn.close() 
+
+    @app.route('/clips/delete/<int:clip_id>', methods=['DELETE'])
+    def delete_clip(clip_id):
+        """Delete a clip and its file"""
+        try:
+            conn = get_db_connection()
+            
+            # Get clip info before deletion
+            clip = conn.execute('SELECT * FROM clips WHERE id = ?', 
+                              (clip_id,)).fetchone()
+            
+            if not clip:
+                return """
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Clip not found
+                    </div>
+                """
+            
+            # Store clip info for restoration
+            deleted_clips = session.get('deleted_clips', [])
+            deleted_clips.append({
+                'id': clip_id,
+                'path': clip['clip_path']
+            })
+            session['deleted_clips'] = deleted_clips
+            
+            # Backup clip data
+            conn.execute('INSERT INTO clips_backup SELECT * FROM clips WHERE id = ?', 
+                        (clip_id,))
+            
+            # Move file to temporary location instead of deleting
+            if os.path.exists(clip['clip_path']):
+                temp_path = clip['clip_path'] + '.deleted'
+                os.rename(clip['clip_path'], temp_path)
+            
+            # Delete from database
+            conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
+            conn.commit()
+            
+            return """
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Clip deleted successfully
+                </div>
+            """
+            
+        except Exception as e:
+            print(f"Error deleting clip: {str(e)}")
+            return f"""
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Error deleting clip: {str(e)}
+                </div>
+            """
+        finally:
+            conn.close()
+
+    @app.route('/clips/batch-delete', methods=['DELETE'])
+    def batch_delete_clips():
+        """Delete multiple clips at once"""
+        print("=== Starting batch delete ===")
+        print(f"Form data: {request.form}")
+        print(f"Args: {request.args}")
+        
+        try:
+            # Try to get clip IDs from both form data and query parameters
+            clip_ids = request.form.getlist('clip-checkbox') or request.args.getlist('clip-checkbox')
+            
+            print(f"Clip IDs received: {clip_ids}")
+            
+            if not clip_ids:
+                print("No clip IDs found in request")
+                return """
+                    <div class="alert alert-danger">
+                        No clips selected for deletion
+                    </div>
+                """
+
+            conn = get_db_connection()
+            deleted_clips = []
+
+            print(f"Processing {len(clip_ids)} clips for deletion")
+            for clip_id in clip_ids:
+                try:
+                    print(f"Processing clip ID: {clip_id}")
+                    clip = conn.execute('''
+                        SELECT c.*, v.title as video_title 
+                        FROM clips c 
+                        JOIN videos v ON c.video_id = v.id 
+                        WHERE c.id = ?
+                    ''', (clip_id,)).fetchone()
+                    
+                    if clip:
+                        print(f"Found clip: {dict(clip)}")
+                        deleted_clips.append({
+                            'id': clip_id,
+                            'path': clip['clip_path']
+                        })
+                        
+                        print(f"Backing up clip {clip_id}")
+                        conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
+                        conn.execute('INSERT INTO clips_backup SELECT * FROM clips WHERE id = ?', (clip_id,))
+                        
+                        if os.path.exists(clip['clip_path']):
+                            temp_path = clip['clip_path'] + '.deleted'
+                            print(f"Moving file from {clip['clip_path']} to {temp_path}")
+                            if os.path.exists(temp_path):
+                                os.remove(temp_path)
+                            os.rename(clip['clip_path'], temp_path)
+                        
+                        print(f"Deleting clip {clip_id} from database")
+                        conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
+                    else:
+                        print(f"Clip {clip_id} not found in database")
+                        
+                except Exception as e:
+                    print(f"Error processing clip {clip_id}: {str(e)}")
+                    continue
+
+            conn.commit()
+            print(f"Stored {len(deleted_clips)} clips in session for restoration")
+            session['deleted_clips'] = deleted_clips
+            
+            clips = get_clips_data()
+            print("Returning updated template")
+            return render_template('clips_list.html', clips=clips)
+            
+        except Exception as e:
+            print(f"Error in batch delete: {str(e)}")
+            if 'conn' in locals():
+                conn.rollback()
+            return f"""
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Error deleting clips: {str(e)}
+                </div>
+            """
+        finally:
+            if 'conn' in locals():
+                conn.close()
+            print("=== Batch delete completed ===")
+
+    @app.route('/clips/restore/<int:clip_id>', methods=['POST'])
+    def restore_clip(clip_id):
+        """Restore a deleted clip"""
+        try:
+            deleted_clips = session.get('deleted_clips', [])
+            clip_info = next((clip for clip in deleted_clips if int(clip['id']) == clip_id), None)
+            
+            if clip_info:
+                conn = get_db_connection()
+                try:
+                    # Restore physical file
+                    temp_path = clip_info['path'] + '.deleted'
+                    if os.path.exists(temp_path):
+                        if os.path.exists(clip_info['path']):
+                            os.remove(clip_info['path'])  # Remove if exists
+                        os.rename(temp_path, clip_info['path'])
+                    
+                    # Get the clip data from backup
+                    clip_data = conn.execute('''
+                        SELECT video_id, clip_name, start_time, end_time, clip_path 
+                        FROM clips_backup WHERE id = ?
+                    ''', (clip_id,)).fetchone()
+                    
+                    if clip_data:
+                        # Remove any existing entry in clips table
+                        conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
+                        
+                        # Reinsert the clip
+                        conn.execute('''
+                            INSERT INTO clips 
+                            (id, video_id, clip_name, start_time, end_time, clip_path)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (clip_id, clip_data[0], clip_data[1], clip_data[2], 
+                              clip_data[3], clip_data[4]))
+                        
+                        # Clean up backup
+                        conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
+                        conn.commit()
+                    
+                    # Remove from deleted clips session
+                    session['deleted_clips'] = [c for c in deleted_clips if int(c['id']) != clip_id]
+                    
+                    return render_template('clips_list.html', clips=get_clips_data())
+                finally:
+                    conn.close()
+            
+            return """
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Clip not found in deleted items
+                </div>
+            """
+        except Exception as e:
+            print(f"Error restoring clip: {str(e)}")
+            return f"""
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Error restoring clip: {str(e)}
+                </div>
+            """ 
+
+def get_clips_data():
+    """Helper function to get formatted clips data"""
+    conn = get_db_connection()
+    try:
+        clips = conn.execute('''
+            SELECT 
+                c.id,
+                c.clip_name,
+                c.start_time,
+                c.end_time,
+                c.clip_path,
+                c.created_at,
+                v.title as video_title
+            FROM clips c
+            JOIN videos v ON c.video_id = v.id
+            ORDER BY c.created_at DESC
+        ''').fetchall()
+        
+        return [{
+            'id': clip[0],
+            'name': clip[1],
+            'start_time': clip[2],
+            'end_time': clip[3],
+            'path': clip[4],
+            'created_at': clip[5],
+            'video_title': clip[6]
+        } for clip in clips]
+    finally:
+        conn.close() 
