@@ -3,9 +3,5 @@ Flask_SQLAlchemy
 Flask_Login
 Flask_WTF
 email_validator
-pytest
-pytest-cov
-openai
-gunicorn
 python-dotenv
-psycopg2-binary
+gunicorn

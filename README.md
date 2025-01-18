@@ -1,1 +1,81 @@
 # AlliedMastercomputer
+
+A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
+
+## Current Features
+
+### Video Management
+- ✅ Browse and select video folders
+- ✅ Scan and import videos
+- ✅ Display video metadata (size, duration)
+- ✅ Collapsible sidebar for video library
+- ✅ Video playback interface
+
+### Clipping
+- ✅ Set clip start/end times
+- ✅ Name and create clips
+- ✅ Custom output folder selection
+- ✅ FFmpeg integration for clip creation
+- ✅ Direct video serving
+
+### UI/UX
+- ✅ Bootstrap styling
+- ✅ HTMX for dynamic updates
+- ✅ Success/error messages
+- ✅ Responsive layout
+
+## Missing Features
+
+### Video Management
+- ❌ Delete/remove videos from library
+- ❌ Video thumbnails
+- ❌ Folder/tag organization for videos
+
+### Clipping
+- ❌ List of created clips
+- ❌ Clip preview before creation
+- ❌ Clip management (rename/delete)
+- ❌ Batch clip creation
+
+### Advanced Features
+- ❌ Transcoding options
+- ❌ Background task queue
+- ❌ Search/filter functionality
+- ❌ User authentication
+- ❌ Clip thumbnails
+
+## Setup
+
+1. Install requirements:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Install FFmpeg:
+   - Windows: Download from ffmpeg.org
+   - Linux: `sudo apt install ffmpeg`
+   - macOS: `brew install ffmpeg`
+
+3. Run the application:
+   ```bash
+   python app.py
+   ```
+
+## Usage
+
+1. Click "Browse Folder" to select a folder containing videos
+2. Click "Set Clips Folder" to choose where clips will be saved
+3. Select a video from the library
+4. Use the video player to find start/end points
+5. Enter a clip name and create your clip
+
+## Tech Stack
+
+- Frontend: HTML, Bootstrap, HTMX
+- Backend: Python, Flask
+- Database: SQLite
+- Video Processing: FFmpeg
+
+## Contributing
+
+Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.

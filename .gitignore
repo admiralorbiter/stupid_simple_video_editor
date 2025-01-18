@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+# Clips folder
+clips/
 
 # C extensions
 *.so

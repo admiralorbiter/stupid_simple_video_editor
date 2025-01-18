@@ -120,6 +120,14 @@
         </form>
     </div>
 
+    <!-- Add this after the Browse Folder button -->
+    <div class="mb-3">
+        <button id="clipsFolder" class="btn btn-outline-secondary">
+            <i class="bi bi-folder2-open me-2"></i>Set Clips Folder
+        </button>
+        <div id="selected-clips-folder" class="text-muted small mt-1"></div>
+    </div>
+
     <!-- Video List -->
     <div id="video-list">
         {% include 'video_list.html' %}
@@ -187,5 +195,20 @@ function loadVideoEditor(videoId) {
     });
     document.querySelector(`[data-video-id="${videoId}"]`).classList.add('selected');
 }
+
+document.getElementById('clipsFolder').addEventListener('click', async function(e) {
+    e.preventDefault();
+    try {
+        const response = await fetch('/select-clips-folder');
+        const data = await response.json();
+        
+        if (data.status === 'success') {
+            document.getElementById('selected-clips-folder').textContent = 
+                `Clips will be saved to: ${data.folder}`;
+        }
+    } catch (error) {
+        console.error('Error selecting clips folder:', error);
+    }
+});
 </script>
 {% endblock %}

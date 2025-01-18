@@ -54,19 +54,36 @@ def init_routes(app):
                 return value
         return value.strftime('%Y-%m-%d %H:%M')
 
-    # Initialize videos table
+    # Initialize database tables
     with app.app_context():
         conn = get_db_connection()
-        conn.execute('''
-            CREATE TABLE IF NOT EXISTS videos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                file_path TEXT UNIQUE NOT NULL,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        ''')
-        conn.commit()
-        conn.close()
+        try:
+            # Create videos table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS videos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    file_path TEXT UNIQUE NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Create clips table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS clips (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    video_id INTEGER NOT NULL,
+                    clip_name TEXT NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    clip_path TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (video_id) REFERENCES videos (id)
+                )
+            ''')
+            conn.commit()
+        finally:
+            conn.close()
 
     @app.route('/')
     def index():
@@ -238,6 +255,35 @@ def init_routes(app):
                 </div>
             """
 
+    @app.route('/select-clips-folder')
+    def select_clips_folder():
+        """Open system folder browser dialog for clips destination"""
+        try:
+            root = Tk()
+            root.withdraw()
+            
+            folder_path = filedialog.askdirectory()
+            root.destroy()
+            
+            if folder_path:
+                session['clips_folder'] = folder_path
+                return jsonify({
+                    'folder': folder_path,
+                    'status': 'success'
+                })
+            return jsonify({
+                'status': 'cancelled'
+            })
+        except Exception as e:
+            try:
+                root.destroy()
+            except:
+                pass
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
+
     # Existing auth routes
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -267,6 +313,14 @@ def init_routes(app):
         start_time = request.form.get('start_time')
         end_time = request.form.get('end_time')
         
+        clips_folder = session.get('clips_folder')
+        if not clips_folder:
+            return """
+                <div class="alert alert-danger">
+                    Please select a destination folder for clips first.
+                </div>
+            """
+        
         if not all([video_id, clip_name, start_time, end_time]):
             return """
                 <div class="alert alert-danger">
@@ -286,15 +340,14 @@ def init_routes(app):
                     </div>
                 """
             
-            # Create clips directory if it doesn't exist
-            clips_dir = os.path.join('static', 'clips')
-            os.makedirs(clips_dir, exist_ok=True)
+            # Use the selected clips folder
+            os.makedirs(clips_folder, exist_ok=True)
             
             # Generate unique filename for the clip
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             safe_name = "".join(c for c in clip_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             output_filename = f'{safe_name}_{timestamp}.mp4'
-            output_path = os.path.join(clips_dir, output_filename)
+            output_path = os.path.join(clips_folder, output_filename)
             
             # Build FFmpeg command
             command = [
