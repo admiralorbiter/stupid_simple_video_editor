@@ -54,6 +54,11 @@ def init_routes(app):
                 return value
         return value.strftime('%Y-%m-%d %H:%M')
 
+    # Add video duration as a template filter
+    @app.template_filter('duration')
+    def video_duration_filter(file_path):
+        return get_video_duration(file_path)
+
     # Initialize database tables
     with app.app_context():
         conn = get_db_connection()
@@ -221,6 +226,10 @@ def init_routes(app):
                 </div>
             """
         
+        # Ensure thumbnail directories exist
+        if not os.path.exists('static/thumbnails/videos'):
+            os.makedirs('static/thumbnails/videos', exist_ok=True)
+        
         # Scan folder for videos
         videos = []
         try:
@@ -229,25 +238,53 @@ def init_routes(app):
             for file_path in Path(folder_path).glob('*'):
                 if is_video_file(str(file_path)):
                     absolute_path = str(file_path.absolute())
+                    
+                    # Generate thumbnail
+                    thumbnail_filename = f"{file_path.stem}_thumb.jpg"
+                    # Use forward slashes for web paths
+                    thumbnail_path = 'static/thumbnails/videos/' + thumbnail_filename
+                    relative_thumbnail_path = 'thumbnails/videos/' + thumbnail_filename
+                    
+                    # Generate thumbnail using FFmpeg
+                    try:
+                        cmd = [
+                            'ffmpeg', '-y',
+                            '-ss', '00:00:01',  # Take thumbnail from 1 second in
+                            '-i', absolute_path,
+                            '-vframes', '1',
+                            '-q:v', '2',
+                            thumbnail_path.replace('/', os.path.sep)  # Convert to OS-specific path for ffmpeg
+                        ]
+                        subprocess.run(cmd, capture_output=True, check=True)
+                        has_thumbnail = True
+                    except subprocess.CalledProcessError:
+                        print(f"Failed to generate thumbnail for {file_path}")
+                        has_thumbnail = False
+                        relative_thumbnail_path = None
+                    
                     video_info = {
                         'title': file_path.stem,
                         'file_path': absolute_path,
                         'size_mb': round(os.path.getsize(file_path) / (1024 * 1024), 2),
-                        'duration': get_video_duration(str(file_path))
+                        'duration': get_video_duration(str(file_path)),
+                        'thumbnail_path': relative_thumbnail_path if has_thumbnail else None
                     }
                     
-                    # Store in database with absolute path
+                    # Store in database with absolute path and thumbnail
                     cursor = conn.execute('''
-                        INSERT OR IGNORE INTO videos (title, file_path)
-                        VALUES (?, ?)
+                        INSERT OR IGNORE INTO videos (title, file_path, thumbnail_path)
+                        VALUES (?, ?, ?)
                         RETURNING id
-                    ''', (video_info['title'], absolute_path))
+                    ''', (video_info['title'], absolute_path, relative_thumbnail_path if has_thumbnail else None))
                     
                     result = cursor.fetchone()
                     if result is None:  # File was already in database
                         cursor = conn.execute('''
-                            SELECT id FROM videos WHERE file_path = ?
-                        ''', (absolute_path,))
+                            UPDATE videos 
+                            SET thumbnail_path = ?
+                            WHERE file_path = ?
+                            RETURNING id, thumbnail_path
+                        ''', (relative_thumbnail_path if has_thumbnail else None, absolute_path))
                         result = cursor.fetchone()
                     
                     video_info['id'] = result[0]
@@ -266,7 +303,7 @@ def init_routes(app):
             return render_template('video_list.html', videos=videos)
             
         except Exception as e:
-            print(f"Error scanning folder: {str(e)}")  # Add logging
+            print(f"Error scanning folder: {str(e)}")
             return f"""
                 <div class="alert alert-danger">
                     Error scanning folder: {str(e)}
@@ -687,49 +724,47 @@ def init_routes(app):
                 </div>
             """ 
 
-    @app.route('/videos/import', methods=['POST'])
+    @app.route('/import-videos', methods=['POST'])
     def import_videos():
-        """Import videos from selected folder"""
+        """Import videos from the selected folder"""
+        folder_path = session.get('video_folder')
+        if not folder_path:
+            return """
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    No folder selected. Please select a folder first.
+                </div>
+            """
+        
+        conn = get_db_connection()
         try:
-            folder_path = request.form.get('folder_path')
-            if not folder_path:
-                return """
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        No folder path provided
-                    </div>
-                """
-            
-            # Ensure thumbnail directories exist
-            ensure_thumbnail_dirs()
-            
-            conn = get_db_connection()
             imported_count = 0
             skipped_count = 0
             
-            for file in Path(folder_path).glob('**/*'):
-                if file.suffix.lower() in ['.mp4', '.mkv', '.avi', '.mov']:
+            for file in Path(folder_path).glob('*'):
+                if is_video_file(str(file)):
+                    # Check if video already exists
+                    existing = conn.execute('SELECT id FROM videos WHERE file_path = ?', 
+                                         (str(file),)).fetchone()
+                    
+                    if existing:
+                        skipped_count += 1
+                        continue
+                    
                     try:
-                        # Check if video already exists
-                        existing = conn.execute('SELECT id FROM videos WHERE file_path = ?', 
-                                             (str(file),)).fetchone()
-                        if existing:
-                            skipped_count += 1
-                            continue
-                        
                         # Generate thumbnail
-                        thumbnail_path = f'static/thumbnails/videos/{file.stem}.jpg'
+                        thumbnail_filename = f"{file.stem}_thumb.jpg"
+                        thumbnail_path = f"static/thumbnails/videos/{thumbnail_filename}"
                         if generate_thumbnail(str(file), thumbnail_path):
-                            print(f"Generated thumbnail: {thumbnail_path}")
+                            relative_thumbnail_path = f"thumbnails/videos/{thumbnail_filename}"
                         else:
-                            print(f"Failed to generate thumbnail for: {file}")
-                            thumbnail_path = None
+                            relative_thumbnail_path = None
                         
                         # Insert video with thumbnail
                         conn.execute('''
                             INSERT INTO videos (title, file_path, thumbnail_path)
                             VALUES (?, ?, ?)
-                        ''', (file.stem, str(file), thumbnail_path))
+                        ''', (file.stem, str(file), relative_thumbnail_path))
                         
                         imported_count += 1
                         
@@ -738,7 +773,6 @@ def init_routes(app):
                         continue
             
             conn.commit()
-            
             return f"""
                 <div class="alert alert-success">
                     <i class="bi bi-check-circle me-2"></i>
@@ -756,8 +790,7 @@ def init_routes(app):
                 </div>
             """
         finally:
-            if 'conn' in locals():
-                conn.close()
+            conn.close()
 
 def get_clips_data():
     """Helper function to get formatted clips data"""
