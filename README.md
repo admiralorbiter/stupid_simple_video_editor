@@ -69,6 +69,7 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Enhanced Timeline Visualization
 - ✅ Drag-and-drop segment adjustment
 - ✅ Color-coded segment markers
+- ✅ Progress bar when creating clips and scanning videos
 
 
 ## Bugs
@@ -79,8 +80,6 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 ## Missing Features
 
 ### UI / UX
-- ❌ Progress bar when scanning videos
-- ❌ Progress bar when creating clips
 - ❌ Waveform visualization
 
 ### Advanced Features for Production

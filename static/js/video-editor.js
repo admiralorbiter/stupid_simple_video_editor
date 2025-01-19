@@ -330,9 +330,13 @@ class VideoEditor {
             type: 'keep',
             segments: this.segments
         };
-        console.log('Sending segments data:', segmentsData);
-        
         formData.set('segments', JSON.stringify(segmentsData));
+
+        // Show progress bar and disable submit button
+        const progressContainer = document.getElementById('clipProgress');
+        const submitButton = document.getElementById('createClipBtn');
+        progressContainer.style.display = 'block';
+        submitButton.disabled = true;
 
         try {
             const response = await fetch('/create-clip', {
@@ -340,20 +344,57 @@ class VideoEditor {
                 body: formData
             });
             
-            console.log('Response status:', response.status);
             const result = await response.json();
-            console.log('Response data:', result);
             
-            if (result.status === 'success') {
-                this.showAlert('Clip created successfully!', 'success');
-                setTimeout(() => window.location.reload(), 1500);
+            if (result.status === 'success' && result.task_id) {
+                this.pollProgress(result.task_id);
             } else {
-                this.showAlert(result.message || 'Error creating clip', 'error');
+                throw new Error(result.message || 'Error creating clip');
             }
         } catch (error) {
             console.error('Error creating clip:', error);
             this.showAlert('Error creating clip', 'error');
+            progressContainer.style.display = 'none';
+            submitButton.disabled = false;
         }
+    }
+
+    pollProgress = async (taskId) => {
+        const progressBar = document.querySelector('#clipProgress .progress-bar');
+        const progressText = document.querySelector('#clipProgress .progress-text');
+        const statusText = document.querySelector('#clipProgress .progress-status');
+        const submitButton = document.getElementById('createClipBtn');
+
+        const updateProgress = async () => {
+            try {
+                const response = await fetch(`/clip-progress/${taskId}`);
+                const data = await response.json();
+
+                if (data.state === 'PROGRESS') {
+                    progressBar.style.width = `${data.progress}%`;
+                    progressBar.setAttribute('aria-valuenow', data.progress);
+                    progressText.textContent = `${data.progress}%`;
+                    statusText.textContent = data.status;
+                    setTimeout(updateProgress, 500);
+                } else if (data.state === 'SUCCESS') {
+                    progressBar.style.width = '100%';
+                    progressBar.setAttribute('aria-valuenow', 100);
+                    progressText.textContent = '100%';
+                    statusText.textContent = 'Clip created successfully!';
+                    this.showAlert('Clip created successfully!', 'success');
+                    setTimeout(() => window.location.reload(), 1500);
+                } else if (data.state === 'FAILURE') {
+                    throw new Error(data.error || 'Failed to create clip');
+                }
+            } catch (error) {
+                console.error('Error checking progress:', error);
+                this.showAlert('Error creating clip', 'error');
+                progressBar.style.display = 'none';
+                submitButton.disabled = false;
+            }
+        };
+
+        updateProgress();
     }
 
     formatTime(seconds) {
