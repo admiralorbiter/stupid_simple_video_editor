@@ -170,7 +170,7 @@
 <div class="sidebar" id="sidebar">
     <!-- Folder Selection -->
     <div class="folder-selection">
-        <h6 class="mb-3">Video Library</h6>
+        <h6 class="mb-3 text-pale-dogwood">Video Library</h6>
         <form hx-post="/select-folder" 
               hx-target="#video-list"
               hx-indicator="#loading-indicator">
@@ -196,8 +196,14 @@
                     Scanning...
                 </div>
             </div>
-            <div id="selected-folder" class="mt-2 text-muted small"></div>
-            <div id="selected-clips-folder" class="mt-2 text-muted small"></div>
+            <div id="selected-folder" class="clips-will-save mt-2">
+                <span class="folder-label">Selected Folder:</span>
+                <div class="folder-path"></div>
+            </div>
+            <div id="selected-clips-folder" class="clips-will-save mt-2">
+                <span class="folder-label">Clips will be saved to:</span>
+                <div class="folder-path"></div>
+            </div>
         </form>
     </div>
 
@@ -249,7 +255,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const data = await response.json();
             
             if (data.status === 'success') {
-                selectedFolder.textContent = `Selected: ${data.folder}`;
+                selectedFolder.querySelector('.folder-path').textContent = data.folder;
+                selectedFolder.style.display = 'block';
                 scanButton.style.display = 'block';
             }
         } catch (error) {
@@ -258,17 +265,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
-// Function to load video editor
-function loadVideoEditor(videoId) {
-    htmx.ajax('GET', `/edit-video/${videoId}`, '#editor-content');
-    
-    // Update selected state in the list
-    document.querySelectorAll('.video-list-item').forEach(item => {
-        item.classList.remove('selected');
-    });
-    document.querySelector(`[data-video-id="${videoId}"]`).classList.add('selected');
-}
-
 document.getElementById('clipsFolder').addEventListener('click', async function(e) {
     e.preventDefault();
     try {
@@ -276,8 +272,9 @@ document.getElementById('clipsFolder').addEventListener('click', async function(
         const data = await response.json();
         
         if (data.status === 'success') {
-            document.getElementById('selected-clips-folder').textContent = 
-                `Clips will be saved to: ${data.folder}`;
+            const clipsFolderDiv = document.getElementById('selected-clips-folder');
+            clipsFolderDiv.querySelector('.folder-path').textContent = data.folder;
+            clipsFolderDiv.style.display = 'block';
         }
     } catch (error) {
         console.error('Error selecting clips folder:', error);

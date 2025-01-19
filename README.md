@@ -10,6 +10,8 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Display video metadata (size, duration)
 - ✅ Collapsible sidebar for video library
 - ✅ Video playback interface
+- ✅ Video thumbnails with lazy loading
+- ✅ Thumbnail placeholders during loading
 
 ### Clipping
 - ✅ Set clip start/end times
@@ -21,7 +23,8 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Clip management (delete individual/batch)
 - ✅ Clips organized by source video
 - ✅ Clip thumbnails
-- ❌ Clip undo
+- ✅ Clip undo (individual deletes)
+- ❌ Undo batch deletion
 
 ### UI/UX
 - ✅ Bootstrap styling
@@ -30,12 +33,14 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Responsive layout
 - ✅ Batch selection interface
 - ✅ Confirmation dialogs
+- ✅ Improved text contrast and readability
+- ✅ Loading states and indicators
+- ✅ Smooth transitions and animations
 
 ## Missing Features
 
 ### Video Management
 - ❌ Delete/remove videos from library
-- ❌ Video thumbnails
 - ❌ Folder/tag organization for videos
 
 ### Clipping

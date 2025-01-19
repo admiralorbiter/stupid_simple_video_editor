@@ -1,4 +1,4 @@
-from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file
+from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file, make_response
 from flask_login import login_required, login_user, logout_user
 from forms import LoginForm
 from models import User, db
@@ -249,9 +249,34 @@ def init_routes(app):
     def index():
         """Render the main page with video library"""
         conn = get_db_connection()
-        videos = conn.execute('SELECT * FROM videos').fetchall()
-        conn.close()
-        return render_template('index.html', videos=videos)
+        try:
+            # Get basic video info first
+            videos = conn.execute('''
+                SELECT 
+                    id,
+                    title,
+                    file_path,
+                    thumbnail_path,
+                    (SELECT COUNT(*) FROM clips WHERE video_id = videos.id) as clip_count
+                FROM videos
+                ORDER BY title ASC
+            ''').fetchall()
+            
+            videos_data = [{
+                'id': video['id'],
+                'title': video['title'],
+                'file_path': video['file_path'],
+                'thumbnail_path': video['thumbnail_path'],
+                'clip_count': video['clip_count']
+            } for video in videos]
+            
+            # Render initial page quickly
+            response = make_response(render_template('index.html', videos=videos_data))
+            response.headers['X-Content-Type-Options'] = 'nosniff'
+            return response
+            
+        finally:
+            conn.close()
 
     @app.route('/scan-folder', methods=['POST'])
     def scan_folder():
@@ -669,7 +694,7 @@ def init_routes(app):
             
             # Get clip info before deletion
             clip = conn.execute('SELECT * FROM clips WHERE id = ?', 
-                              (clip_id,)).fetchone()
+                          (clip_id,)).fetchone()
             
             if not clip:
                 return """
@@ -688,12 +713,16 @@ def init_routes(app):
             session['deleted_clips'] = deleted_clips
             
             # Backup clip data
+            conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
             conn.execute('INSERT INTO clips_backup SELECT * FROM clips WHERE id = ?', 
                         (clip_id,))
             
             # Move file to temporary location instead of deleting
             if os.path.exists(clip['clip_path']):
                 temp_path = clip['clip_path'] + '.deleted'
+                # If .deleted file already exists, remove it first
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
                 os.rename(clip['clip_path'], temp_path)
             
             # Delete from database
@@ -707,11 +736,17 @@ def init_routes(app):
                 <div class="alert alert-success">
                     <i class="bi bi-check-circle me-2"></i>
                     Clip deleted successfully
+                    <button class="btn btn-link text-success" 
+                            hx-post="/clips/restore/{}">
+                        Undo
+                    </button>
                 </div>
-            """
+            """.format(clip_id)
             
         except Exception as e:
             print(f"Error deleting clip: {str(e)}")
+            if 'conn' in locals():
+                conn.rollback()
             return f"""
                 <div class="alert alert-danger">
                     <i class="bi bi-exclamation-triangle me-2"></i>
@@ -719,7 +754,8 @@ def init_routes(app):
                 </div>
             """
         finally:
-            conn.close()
+            if 'conn' in locals():
+                conn.close()
 
     @app.route('/clips/batch-delete', methods=['DELETE'])
     def batch_delete_clips():

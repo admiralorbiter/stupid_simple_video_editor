@@ -1,3 +1,14 @@
+:root {
+    --dark-purple: #2D243B;
+    --eggplant: #483D8B;
+    --redwood: #B87E84;
+    --pale-dogwood: #F2D9D9;
+    --raisin-black: #2B2B2B;
+    --text-light: #F2D9D9;
+    --text-dark: #2B2B2B;
+    --text-muted: #6c757d;
+}
+
 .hero-section {
     text-align: center;
     padding: 4rem 2rem;
@@ -102,7 +113,7 @@
 }
 
 .video-list-item:hover {
-    background-color: var(--pale-dogwood);
+    background-color: rgba(255, 255, 255, 0.95);
 }
 
 .video-item-content {
@@ -144,8 +155,64 @@
     min-width: 0;
 }
 
-.video-info .fw-bold {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+.video-title {
+    color: var(--text-dark);
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+    text-shadow: 
+        0 0 1px rgba(255,255,255,0.8),
+        0 0 2px rgba(255,255,255,0.6);
+}
+
+.video-metadata {
+    color: var(--text-dark);
+    font-weight: 500;
+    text-shadow: 
+        0 0 1px rgba(255,255,255,0.8),
+        0 0 2px rgba(255,255,255,0.6);
+}
+
+.clips-will-save {
+    color: var(--pale-dogwood);
+    background-color: rgba(45, 36, 59, 0.95);
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    margin-top: 0.75rem;
+    font-weight: 500;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.folder-path {
+    color: var(--redwood);
+    font-weight: 600;
+    text-shadow: 
+        0 0 1px rgba(0,0,0,0.3),
+        0 0 2px rgba(0,0,0,0.2);
+    word-break: break-all;
+    padding: 0.25rem 0;
+}
+
+.btn-clip {
+    background-color: var(--redwood);
+    color: var(--pale-dogwood);
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    margin-bottom: 0.5rem;
+    width: 100%;
+    text-align: left;
+}
+
+.btn-clip:hover {
+    background-color: var(--eggplant);
+    color: var(--pale-dogwood);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.video-list-item.selected {
+    background-color: rgba(255, 255, 255, 0.98);
+    border: 2px solid var(--eggplant);
 } 
