@@ -37,17 +37,19 @@ def init_organization_routes(app):
         try:
             # Get all folders with their parent relationships
             folders_query = '''
-                WITH RECURSIVE folder_tree(id, name, parent_id, is_open, level) AS (
-                    SELECT id, name, parent_id, is_open, 0 as level
+                WITH RECURSIVE folder_tree(id, name, parent_id, is_open, level, position) AS (
+                    SELECT id, name, parent_id, is_open, 0 as level, position
                     FROM folders 
                     WHERE parent_id IS NULL
+                    
                     UNION ALL
-                    SELECT f.id, f.name, f.parent_id, f.is_open, ft.level + 1
+                    
+                    SELECT f.id, f.name, f.parent_id, f.is_open, ft.level + 1, f.position
                     FROM folders f
                     JOIN folder_tree ft ON f.parent_id = ft.id
                 )
                 SELECT * FROM folder_tree
-                ORDER BY level, name
+                ORDER BY level, position, name
             '''
             folders = conn.execute(folders_query).fetchall()
 
@@ -344,6 +346,97 @@ def init_organization_routes(app):
             
             return jsonify({'status': 'success', 'is_open': new_state})
         except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        finally:
+            conn.close()
+
+    @app.route('/api/folders/reorder', methods=['POST'])
+    def reorder_folders():
+        """Update folder positions"""
+        data = request.json
+        folder_positions = data.get('positions', [])  # List of {id: x, position: y, parent_id: z}
+        
+        if not folder_positions:
+            return jsonify({'status': 'error', 'message': 'No positions provided'}), 400
+        
+        conn = get_db_connection()
+        try:
+            # Update positions in a transaction
+            for item in folder_positions:
+                # Update both position and parent_id
+                conn.execute('''
+                    UPDATE folders 
+                    SET position = ?, 
+                        parent_id = ?
+                    WHERE id = ?
+                ''', (item['position'], item.get('parent_id'), item['id']))
+            
+            conn.commit()
+            return jsonify({'status': 'success'})
+        except Exception as e:
+            conn.rollback()
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        finally:
+            conn.close()
+
+    @app.route('/api/folders/<int:folder_id>', methods=['PATCH', 'DELETE'])
+    def manage_folder(folder_id):
+        """Update or delete a folder"""
+        conn = get_db_connection()
+        try:
+            # First verify the folder exists
+            folder = conn.execute('SELECT id FROM folders WHERE id = ?', (folder_id,)).fetchone()
+            if not folder:
+                return jsonify({'status': 'error', 'message': 'Folder not found'}), 404
+
+            if request.method == 'DELETE':
+                # First, recursively get all child folder IDs
+                child_folders = conn.execute('''
+                    WITH RECURSIVE folder_tree AS (
+                        SELECT id FROM folders WHERE id = ?
+                        UNION ALL
+                        SELECT f.id 
+                        FROM folders f
+                        JOIN folder_tree ft ON f.parent_id = ft.id
+                    )
+                    SELECT id FROM folder_tree
+                ''', (folder_id,)).fetchall()
+                
+                folder_ids = [f['id'] for f in child_folders]
+                
+                # Delete all video associations for these folders
+                placeholders = ','.join('?' * len(folder_ids))
+                conn.execute(f'''
+                    DELETE FROM video_folders 
+                    WHERE folder_id IN ({placeholders})
+                ''', folder_ids)
+                
+                # Delete the folders
+                conn.execute(f'''
+                    DELETE FROM folders 
+                    WHERE id IN ({placeholders})
+                ''', folder_ids)
+                
+                conn.commit()
+                return jsonify({'status': 'success'})
+                
+            elif request.method == 'PATCH':
+                data = request.json
+                name = data.get('name')
+                if not name:
+                    return jsonify({'status': 'error', 'message': 'Name is required'}), 400
+                
+                conn.execute('''
+                    UPDATE folders 
+                    SET name = ? 
+                    WHERE id = ?
+                ''', (name, folder_id))
+                
+                conn.commit()
+                return jsonify({'status': 'success'})
+                
+        except Exception as e:
+            conn.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
         finally:
             conn.close() 

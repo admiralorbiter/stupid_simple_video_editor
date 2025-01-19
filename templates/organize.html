@@ -29,6 +29,10 @@
                             <div class="folder-item {% if folder.is_open %}open{% endif %}" 
                                  style="margin-left: {{ folder.level * 20 }}px"
                                  data-folder-id="{{ folder.id }}"
+                                 data-position="{{ folder.position }}"
+                                 draggable="true"
+                                 ondragstart="onFolderDragStart(event)"
+                                 ondragend="onFolderDragEnd(event)"
                                  ondragover="onFolderDragOver(event)"
                                  ondrop="onFolderDrop(event)">
                                 <div class="d-flex align-items-center" onclick="toggleFolder(event, {{ folder.id }})">
@@ -431,6 +435,71 @@
 
 .tag-category.drag-over {
     border-color: var(--bs-primary);
+}
+
+.folder-item.dragging {
+    opacity: 0.5;
+    cursor: move;
+}
+
+.folder-item.drag-over {
+    border: 2px dashed var(--bs-primary);
+}
+
+.folder-item.drag-above {
+    border-top: 2px solid var(--bs-primary);
+}
+
+.folder-item.drag-below {
+    border-bottom: 2px solid var(--bs-primary);
+}
+
+.folder-item.drag-above {
+    border-top: 2px solid var(--bs-primary);
+    padding-top: calc(0.5rem - 2px);
+    margin-top: 2px;
+}
+
+.folder-item.drag-below {
+    border-bottom: 2px solid var(--bs-primary);
+    padding-bottom: calc(0.5rem - 2px);
+    margin-bottom: 2px;
+}
+
+.folder-item.drag-over {
+    background-color: var(--bs-primary-bg-subtle);
+    border: 2px dashed var(--bs-primary);
+}
+
+.folder-item {
+    position: relative;
+}
+
+/* Add drop zone indicators */
+.folder-item::before,
+.folder-item::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.folder-item::before {
+    top: -4px;
+}
+
+.folder-item::after {
+    bottom: -4px;
+}
+
+.folder-item.drag-above::before,
+.folder-item.drag-below::after {
+    opacity: 1;
+    background-color: var(--bs-primary);
 }
 </style>
 
@@ -937,11 +1006,17 @@ async function renameFolder(folderId) {
             body: JSON.stringify({ name })
         });
         
-        if (response.ok) {
+        if (!response.ok) throw new Error('Failed to rename folder');
+        
+        const data = await response.json();
+        if (data.status === 'success') {
             location.reload();
+        } else {
+            throw new Error(data.message || 'Failed to rename folder');
         }
     } catch (error) {
         console.error('Error renaming folder:', error);
+        alert('Failed to rename folder. Please try again.');
     }
 }
 
@@ -966,21 +1041,107 @@ async function createSubfolder(parentId) {
     }
 }
 
-function onFolderDragOver(event) {
-    event.preventDefault();
-    event.currentTarget.classList.add('drag-over');
+function onFolderDragStart(event) {
+    draggedFolder = event.target.closest('.folder-item');
+    draggedFolder.classList.add('dragging');
+    event.dataTransfer.setData('text/plain', draggedFolder.dataset.folderId);
 }
 
-function onFolderDrop(event) {
+function onFolderDragEnd(event) {
+    draggedFolder.classList.remove('dragging');
+    draggedFolder = null;
+    document.querySelectorAll('.folder-item').forEach(folder => {
+        folder.classList.remove('drag-over');
+    });
+}
+
+function onFolderDragOver(event) {
     event.preventDefault();
-    const folderItem = event.currentTarget;
-    folderItem.classList.remove('drag-over');
+    const folderItem = event.target.closest('.folder-item');
+    if (!folderItem || folderItem === draggedFolder) return;
     
-    // Handle video drop into folder
-    const videoIds = getSelectedVideoIds();
-    const folderId = folderItem.dataset.folderId;
+    const rect = folderItem.getBoundingClientRect();
+    const relativeY = event.clientY - rect.top;
+    const percentage = relativeY / rect.height;
     
-    moveVideosToFolder(videoIds, folderId);
+    folderItem.classList.remove('drag-over', 'drag-above', 'drag-below');
+    
+    if (percentage < 0.3) {
+        folderItem.classList.add('drag-above');
+    } else if (percentage > 0.7) {
+        folderItem.classList.add('drag-below');
+    } else {
+        folderItem.classList.add('drag-over');
+    }
+}
+
+async function onFolderDrop(event) {
+    event.preventDefault();
+    const folderItem = event.target.closest('.folder-item');
+    if (!folderItem || folderItem === draggedFolder) return;
+    
+    folderItem.classList.remove('drag-over', 'drag-above', 'drag-below');
+    
+    const droppedFolderId = parseInt(event.dataTransfer.getData('text/plain'));
+    const targetFolderId = parseInt(folderItem.dataset.folderId);
+    const draggedElement = document.querySelector(`[data-folder-id="${droppedFolderId}"]`);
+    
+    // Get parent container and all its direct folder children
+    const parentContainer = folderItem.parentElement;
+    const parentFolder = parentContainer.closest('.folder-item');
+    const parentId = parentFolder ? parseInt(parentFolder.dataset.folderId) : null;
+    
+    // Determine drop position
+    const rect = folderItem.getBoundingClientRect();
+    const dropPosition = event.clientY < (rect.top + rect.height * 0.3) ? 'before' :
+                        event.clientY > (rect.top + rect.height * 0.7) ? 'after' : 
+                        'inside';
+
+    // Handle the drop based on position
+    switch (dropPosition) {
+        case 'before':
+            parentContainer.insertBefore(draggedElement, folderItem);
+            break;
+        case 'after':
+            parentContainer.insertBefore(draggedElement, folderItem.nextSibling);
+            break;
+        case 'inside':
+            // Optional: Add logic for nesting folders
+            break;
+    }
+    
+    // Get all folders in their new order
+    const updatedFolders = Array.from(
+        parentContainer.querySelectorAll(':scope > .folder-item')
+    );
+    
+    // Create positions array with explicit positions starting from 0
+    const positions = updatedFolders.map((folder, index) => ({
+        id: parseInt(folder.dataset.folderId),
+        position: index,
+        parent_id: parentId
+    }));
+    
+    try {
+        const response = await fetch('/api/folders/reorder', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ positions })
+        });
+        
+        if (!response.ok) throw new Error('Failed to update folder positions');
+        
+        // Update visual feedback
+        updatedFolders.forEach((folder, index) => {
+            folder.dataset.position = index;
+        });
+    } catch (error) {
+        console.error('Error reordering folders:', error);
+        alert('Failed to reorder folders. Please try again.');
+        location.reload(); // Reload to restore original order
+    }
 }
 
 function filterFolders(searchTerm) {
@@ -1103,6 +1264,33 @@ function showCategoryMenu(event, categoryId) {
 
 function onTagDragStart(event) {
     event.dataTransfer.setData('text/plain', event.target.dataset.tagId);
+}
+
+async function deleteFolder(folderId) {
+    if (!confirm('Are you sure you want to delete this folder and all its subfolders? This cannot be undone.')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/folders/' + folderId, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        });
+        
+        if (!response.ok) throw new Error('Failed to delete folder');
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+            location.reload();
+        } else {
+            throw new Error(data.message || 'Failed to delete folder');
+        }
+    } catch (error) {
+        console.error('Error deleting folder:', error);
+        alert('Failed to delete folder. Please try again.');
+    }
 }
 
 // Add other necessary functions (renameCategory, deleteCategory, etc.)
