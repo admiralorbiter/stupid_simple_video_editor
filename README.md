@@ -46,6 +46,7 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Clip undo (individual deletes)
 - ❌ Undo batch deletion
 - ✅ Clip preview before creation
+- ✅ Clip renaming
 
 ### UI/UX
 - ✅ Bootstrap styling
@@ -64,8 +65,6 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 ## Missing Features
 
 ### Clipping
-- ❌ Clip renaming
-- ❌ Batch clip creation
 - ❌ Undo batch clip deletion
 
 ### Advanced Features

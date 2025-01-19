@@ -414,3 +414,47 @@ def init_clip_routes(app):
                 'status': 'error',
                 'message': str(e)
             }), 500
+
+    @app.route('/clips/rename/<int:clip_id>', methods=['PATCH'])
+    def rename_clip(clip_id):
+        """Rename a clip"""
+        try:
+            new_name = request.json.get('name')
+            if not new_name:
+                return jsonify({'status': 'error', 'message': 'Name is required'}), 400
+            
+            conn = get_db_connection()
+            # Get current clip info
+            clip = conn.execute('SELECT clip_path, clip_name FROM clips WHERE id = ?', 
+                              (clip_id,)).fetchone()
+            
+            if not clip:
+                return jsonify({'status': 'error', 'message': 'Clip not found'}), 404
+            
+            # Update file name if clip exists
+            old_path = clip['clip_path']
+            new_path = old_path.replace(clip['clip_name'], new_name)
+            
+            if os.path.exists(old_path):
+                os.rename(old_path, new_path)
+            
+            # Update database
+            conn.execute('''
+                UPDATE clips 
+                SET clip_name = ?,
+                    clip_path = ?
+                WHERE id = ?
+            ''', (new_name, new_path, clip_id))
+            
+            conn.commit()
+            return jsonify({
+                'status': 'success',
+                'name': new_name,
+                'path': new_path
+            })
+            
+        except Exception as e:
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        finally:
+            if 'conn' in locals():
+                conn.close()

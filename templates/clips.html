@@ -117,6 +117,39 @@
         color: var(--pale-dogwood);
         font-size: 2rem;
     }
+
+    .clip-name {
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+    }
+
+    .rename-icon {
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        font-size: 0.8em;
+        color: var(--pale-dogwood);
+    }
+
+    .clip-name:hover .rename-icon {
+        opacity: 1;
+    }
+
+    .rename-input {
+        background-color: var(--pale-dogwood);
+        color: var(--dark-purple);
+        border: 1px solid var(--redwood);
+        border-radius: 4px;
+        padding: 2px 6px;
+        margin: -2px 0;
+        width: calc(100% - 30px);
+    }
+
+    .rename-input:focus {
+        outline: none;
+        border-color: var(--eggplant);
+        box-shadow: 0 0 0 2px rgba(var(--eggplant-rgb), 0.25);
+    }
 </style>
 {% endblock %}
 

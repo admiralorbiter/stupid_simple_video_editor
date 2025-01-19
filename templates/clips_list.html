@@ -35,8 +35,13 @@
                        name="clip-checkbox" 
                        value="{{ clip.id }}" 
                        class="form-check-input me-2 clip-checkbox">
-                <div>
-                    <h5 class="mb-0">{{ clip.name }}</h5>
+                <div class="clip-title-container w-100">
+                    <h5 class="mb-0 clip-name" 
+                        data-clip-id="{{ clip.id }}"
+                        onclick="startRename(event, {{ clip.id }})">
+                        <span class="clip-name-text">{{ clip.name }}</span>
+                        <i class="bi bi-pencil-square ms-2 rename-icon"></i>
+                    </h5>
                     <small>From: {{ clip.video_title }}</small>
                 </div>
             </div>
@@ -135,4 +140,65 @@ document.body.addEventListener('htmx:afterRequest', function(evt) {
 document.body.addEventListener('htmx:responseError', function(evt) {
     console.log('Request error:', evt.detail);
 });
+
+function startRename(event, clipId) {
+    const nameContainer = event.currentTarget;
+    const nameText = nameContainer.querySelector('.clip-name-text');
+    const currentName = nameText.textContent.trim();
+    
+    // Create input field
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.className = 'form-control form-control-sm rename-input';
+    
+    // Replace text with input
+    nameText.style.display = 'none';
+    nameContainer.insertBefore(input, nameText);
+    input.focus();
+    input.select();
+    
+    // Handle save on enter or blur
+    async function saveNewName() {
+        const newName = input.value.trim();
+        if (newName && newName !== currentName) {
+            try {
+                const response = await fetch(`/clips/rename/${clipId}`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name: newName })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    nameText.textContent = newName;
+                    // Update play button href if needed
+                    const playButton = document.querySelector(`#clip-${clipId} .btn-clip[target="_blank"]`);
+                    if (playButton) playButton.href = data.path;
+                } else {
+                    throw new Error(data.message);
+                }
+            } catch (error) {
+                console.error('Error renaming clip:', error);
+                alert('Failed to rename clip. Please try again.');
+            }
+        }
+        
+        // Cleanup
+        nameText.style.display = '';
+        input.remove();
+    }
+    
+    input.addEventListener('blur', saveNewName);
+    input.addEventListener('keyup', (e) => {
+        if (e.key === 'Enter') {
+            saveNewName();
+        } else if (e.key === 'Escape') {
+            nameText.style.display = '';
+            input.remove();
+        }
+    });
+}
 </script> 
