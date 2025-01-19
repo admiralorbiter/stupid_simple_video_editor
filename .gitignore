@@ -4,7 +4,7 @@ __pycache__/
 *$py.class
 # Clips folder
 clips/
-.db
+*.db
 thumbnails/
 
 # C extensions

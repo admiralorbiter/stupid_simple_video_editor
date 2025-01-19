@@ -3,8 +3,8 @@
     {% for video in videos %}
     <div class="video-list-item" 
          data-video-id="{{ video.id }}"
-         hx-get="/video/{{ video.id }}"
-         hx-target="#video-detail"
+         hx-get="/edit-video/{{ video.id }}"
+         hx-target="#editor-content"
          hx-trigger="click">
         <div class="video-thumbnail">
             {% if video.thumbnail_path %}
