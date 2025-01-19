@@ -1,9 +1,11 @@
+import json
 from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file, make_response
 import os
 from pathlib import Path
 import subprocess
 from tkinter import Tk, filedialog
 from helper import *
+from werkzeug.utils import secure_filename
 
 def init_video_routes(app):
     @app.route('/video/<int:video_id>')
@@ -77,97 +79,104 @@ def init_video_routes(app):
         folder_path = session.get('selected_folder')
         
         if not folder_path or not os.path.isdir(folder_path):
-            return """
-                <div class="alert alert-danger">
-                    No folder selected or invalid folder path.
-                </div>
-            """
+            return jsonify({
+                "error": "No folder selected or invalid folder path."
+            })
         
         # Clean up thumbnails before scanning
         cleanup_thumbnails('videos')
         
-        # Ensure thumbnail directories exist
-        if not os.path.exists('static/thumbnails/videos'):
-            os.makedirs('static/thumbnails/videos', exist_ok=True)
+        # Count total videos for progress
+        total_videos = sum(1 for file in Path(folder_path).glob('*') if is_video_file(str(file)))
         
-        # Scan folder for videos
-        videos = []
+        if total_videos == 0:
+            return jsonify({
+                "total": 0
+            })
+        
+        return jsonify({
+            "total": total_videos
+        })
+
+    @app.route('/scan-progress', methods=['POST'])
+    def scan_progress():
+        """Process videos in chunks and report progress"""
+        data = request.get_json()
+        folder_path = session.get('selected_folder')
+        processed = int(data.get('processed', 0))
+        total = int(data.get('total', 0))
+        
         try:
             conn = get_db_connection()
+            files = [f for f in Path(folder_path).glob('*') if is_video_file(str(f))]
+            chunk_size = 2  # Process 2 files at a time
             
-            for file_path in Path(folder_path).glob('*'):
-                if is_video_file(str(file_path)):
-                    absolute_path = str(file_path.absolute())
-                    
-                    # Generate thumbnail
-                    thumbnail_filename = f"{file_path.stem}_thumb.jpg"
-                    thumbnail_path = 'static/thumbnails/videos/' + thumbnail_filename
-                    relative_thumbnail_path = 'thumbnails/videos/' + thumbnail_filename
-                    
-                    # Generate thumbnail using FFmpeg
-                    try:
-                        cmd = [
-                            'ffmpeg', '-y',
-                            '-ss', '00:00:01',
-                            '-i', absolute_path,
-                            '-vframes', '1',
-                            '-q:v', '2',
-                            thumbnail_path.replace('/', os.path.sep)
-                        ]
-                        subprocess.run(cmd, capture_output=True, check=True)
-                        has_thumbnail = True
-                    except subprocess.CalledProcessError:
-                        print(f"Failed to generate thumbnail for {file_path}")
-                        has_thumbnail = False
-                        relative_thumbnail_path = None
-                    
-                    video_info = {
-                        'title': file_path.stem,
-                        'file_path': absolute_path,
-                        'size_mb': round(os.path.getsize(file_path) / (1024 * 1024), 2),
-                        'duration': get_video_duration(str(file_path)),
-                        'thumbnail_path': relative_thumbnail_path if has_thumbnail else None
-                    }
-                    
-                    cursor = conn.execute('''
-                        INSERT OR IGNORE INTO videos (title, file_path, thumbnail_path)
-                        VALUES (?, ?, ?)
-                        RETURNING id
-                    ''', (video_info['title'], absolute_path, relative_thumbnail_path if has_thumbnail else None))
-                    
-                    result = cursor.fetchone()
-                    if result is None:
-                        cursor = conn.execute('''
-                            UPDATE videos 
-                            SET thumbnail_path = ?
-                            WHERE file_path = ?
-                            RETURNING id, thumbnail_path
-                        ''', (relative_thumbnail_path if has_thumbnail else None, absolute_path))
-                        result = cursor.fetchone()
-                    
-                    video_info['id'] = result[0]
-                    videos.append(video_info)
+            current_files = files[processed:processed + chunk_size]
+            for file in current_files:
+                absolute_path = str(file.absolute())
+                
+                # Generate thumbnail
+                thumbnail_filename = secure_filename(f"{file.stem}_thumb.jpg")
+                thumbnail_path = Path('static/thumbnails/videos') / thumbnail_filename
+                relative_thumbnail_path = f'thumbnails/videos/{thumbnail_filename}'
+                
+                # Ensure thumbnail directory exists
+                thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Generate thumbnail using FFmpeg
+                try:
+                    cmd = [
+                        'ffmpeg', '-y',
+                        '-ss', '00:00:01',
+                        '-i', absolute_path,
+                        '-vframes', '1',
+                        '-q:v', '2',
+                        str(thumbnail_path)
+                    ]
+                    subprocess.run(cmd, capture_output=True, check=True)
+                    has_thumbnail = True
+                except subprocess.CalledProcessError as e:
+                    print(f"Failed to generate thumbnail for {file}: {e}")
+                    has_thumbnail = False
+                    relative_thumbnail_path = None
+                
+                # Store in database
+                conn.execute('''
+                    INSERT OR REPLACE INTO videos (title, file_path, thumbnail_path)
+                    VALUES (?, ?, ?)
+                ''', (file.stem, absolute_path, relative_thumbnail_path if has_thumbnail else None))
+                conn.commit()
+                
+                processed += 1
             
-            conn.commit()
-            conn.close()
+            progress = int((processed / total) * 100)
             
-            if not videos:
-                return """
-                    <div class="alert alert-info">
-                        No video files found in the selected folder.
-                    </div>
-                """
-            
-            return render_template('video_list.html', videos=videos)
-            
+            if processed >= total:
+                # Scan complete, return the video list HTML
+                videos = conn.execute('SELECT * FROM videos ORDER BY title').fetchall()
+                html = render_template('video_list.html', videos=videos)
+                return jsonify({
+                    "progress": 100,
+                    "processed": processed,
+                    "status": "Scan complete!",
+                    "html": html
+                })
+            else:
+                # Return progress update
+                return jsonify({
+                    "progress": progress,
+                    "processed": processed,
+                    "status": f"Processed {processed} of {total} videos..."
+                })
+                
         except Exception as e:
-            print(f"Error scanning folder: {str(e)}")
-            return f"""
-                <div class="alert alert-danger">
-                    Error scanning folder: {str(e)}
-                </div>
-            """
-
+            print(f"Error during scan: {e}")
+            return jsonify({
+                "error": str(e)
+            }), 500
+        finally:
+            conn.close()
+        
     @app.route('/import-videos', methods=['POST'])
     def import_videos():
         """Import videos from the selected folder"""

@@ -281,10 +281,6 @@
                         id="clipsFolder">
                     <i class="bi bi-folder2-open me-2"></i>Set Clips Folder
                 </button>
-                <div id="loading-indicator" class="htmx-indicator">
-                    <div class="spinner-border spinner-border-sm"></div>
-                    Scanning...
-                </div>
             </div>
             <div id="selected-folder" class="clips-will-save mt-2">
                 <span class="folder-label">Selected Folder:</span>
@@ -315,6 +311,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/video-scanner.js') }}"></script>
 <script>
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
@@ -332,49 +329,6 @@ function toggleSidebar() {
         toggleIcon.classList.replace('bi-chevron-right', 'bi-chevron-left');
     }
 }
-
-document.addEventListener('DOMContentLoaded', function() {
-    const browseButton = document.getElementById('browse-button');
-    const scanButton = document.getElementById('scan-button');
-    const selectedFolder = document.getElementById('selected-folder');
-
-    browseButton.addEventListener('click', async function(e) {
-        e.preventDefault();
-        try {
-            const response = await fetch('/browse-folder');
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            const data = await response.json();
-            
-            if (data.status === 'success') {
-                selectedFolder.querySelector('.folder-path').textContent = data.folder;
-                selectedFolder.style.display = 'block';
-                scanButton.style.display = 'block';
-            } else if (data.status === 'error') {
-                console.error('Server error:', data.message);
-            }
-        } catch (error) {
-            console.error('Error selecting folder:', error);
-        }
-    });
-});
-
-document.getElementById('clipsFolder').addEventListener('click', async function(e) {
-    e.preventDefault();
-    try {
-        const response = await fetch('/select-clips-folder');
-        const data = await response.json();
-        
-        if (data.status === 'success') {
-            const clipsFolderDiv = document.getElementById('selected-clips-folder');
-            clipsFolderDiv.querySelector('.folder-path').textContent = data.folder;
-            clipsFolderDiv.style.display = 'block';
-        }
-    } catch (error) {
-        console.error('Error selecting clips folder:', error);
-    }
-});
 
 function toggleDeleteMode() {
     const deleteBtn = document.getElementById('delete-mode-btn');

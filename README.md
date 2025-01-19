@@ -74,6 +74,7 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 ## Bugs
 
 - [Bug] Clip playback not working
+- [Bug] Clip thumbnail not showing
 
 ## Missing Features
 
