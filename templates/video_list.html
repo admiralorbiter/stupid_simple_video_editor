@@ -6,6 +6,11 @@
          hx-get="/edit-video/{{ video.id }}"
          hx-target="#editor-content"
          hx-trigger="click">
+        <div class="selection-overlay">
+            <div class="selection-checkbox">
+                <i class="bi bi-check-lg"></i>
+            </div>
+        </div>
         <div class="video-thumbnail">
             {% if video.thumbnail_path %}
                 <div class="placeholder-thumbnail active">
@@ -164,6 +169,48 @@
     padding: 4px 10px;
     border-radius: 4px;
 }
+
+.selection-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(72, 61, 139, 0.7);
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.selection-checkbox {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #483D8B;
+    font-size: 1.5rem;
+}
+
+.video-list-item.selectable {
+    pointer-events: none;
+}
+
+.video-list-item.selectable .selection-overlay {
+    pointer-events: auto;
+    cursor: pointer;
+}
+
+.video-list-item.selected .selection-overlay {
+    opacity: 1;
+}
 </style>
 
 <script>
@@ -188,10 +235,31 @@ document.addEventListener("DOMContentLoaded", function() {
         lazyLoadObserver.observe(img);
     });
 
+    // Selection mode handling
+    window.toggleSelectionMode = function(enable) {
+        document.querySelectorAll('.video-list-item').forEach(item => {
+            item.classList.toggle('selectable', enable);
+            if (!enable) {
+                item.classList.remove('selected');
+            }
+        });
+    };
+
     document.querySelectorAll('.video-list-item').forEach(item => {
-        item.addEventListener('click', () => {
-            document.querySelectorAll('.video-list-item').forEach(i => i.classList.remove('selected'));
-            item.classList.add('selected');
+        item.addEventListener('click', function(e) {
+            if (this.classList.contains('selectable')) {
+                e.preventDefault();
+                e.stopPropagation();
+                this.classList.toggle('selected');
+                
+                // Update delete button state
+                const selectedCount = document.querySelectorAll('.video-list-item.selected').length;
+                const deleteBtn = document.getElementById('confirm-delete-btn');
+                if (deleteBtn) {
+                    deleteBtn.textContent = `Delete (${selectedCount})`;
+                    deleteBtn.disabled = selectedCount === 0;
+                }
+            }
         });
     });
 });

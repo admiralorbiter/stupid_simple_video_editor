@@ -157,6 +157,59 @@
     .video-duration {
         color: var(--redwood);
     }
+
+    .btn-icon {
+        background: none;
+        border: none;
+        color: var(--pale-dogwood);
+        padding: 0.5rem;
+        border-radius: 50%;
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background-color 0.2s;
+    }
+
+    .btn-icon:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white;
+    }
+
+    .btn-icon.active {
+        background-color: var(--redwood);
+        color: white;
+    }
+
+    .delete-controls {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: var(--dark-purple);
+    }
+
+    .library-header {
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+        background-color: var(--dark-purple);
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .library-title {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--pale-dogwood);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin: 0;
+        padding: 0;
+    }
 </style>
 {% endblock %}
 
@@ -168,9 +221,32 @@
 
 <!-- Sidebar -->
 <div class="sidebar" id="sidebar">
+    <!-- Video Library Header -->
+    <div class="library-header">
+        <div class="d-flex justify-content-between align-items-center p-3">
+            <h6 class="mb-0 library-title">Video Library</h6>
+            <div class="header-actions">
+                <button class="btn btn-icon" id="delete-mode-btn" onclick="toggleDeleteMode()">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Delete Controls (initially hidden) -->
+        <div id="delete-controls" class="delete-controls" style="display: none;">
+            <div class="d-flex justify-content-between p-3 bg-danger">
+                <button class="btn btn-sm btn-light" onclick="cancelDelete()">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" id="confirm-delete-btn" onclick="confirmDelete()" disabled>
+                    <i class="bi bi-trash"></i> <span class="delete-count">0</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Folder Selection -->
     <div class="folder-selection">
-        <h6 class="mb-3 text-pale-dogwood">Video Library</h6>
         <form hx-post="/select-folder" 
               hx-target="#video-list"
               hx-indicator="#loading-indicator">
@@ -280,5 +356,63 @@ document.getElementById('clipsFolder').addEventListener('click', async function(
         console.error('Error selecting clips folder:', error);
     }
 });
+
+function toggleDeleteMode() {
+    const deleteBtn = document.getElementById('delete-mode-btn');
+    const deleteControls = document.getElementById('delete-controls');
+    const isActive = deleteBtn.classList.toggle('active');
+    
+    if (isActive) {
+        deleteControls.classList.remove('hide');
+        deleteControls.classList.add('show');
+        deleteControls.style.display = 'block';
+    } else {
+        deleteControls.classList.remove('show');
+        deleteControls.classList.add('hide');
+        setTimeout(() => {
+            deleteControls.style.display = 'none';
+        }, 300);
+    }
+    
+    window.toggleSelectionMode(isActive);
+}
+
+function cancelDelete() {
+    toggleDeleteMode();
+}
+
+function confirmDelete() {
+    const selectedVideos = document.querySelectorAll('.video-list-item.selected');
+    const videoIds = Array.from(selectedVideos).map(el => el.dataset.videoId);
+    
+    fetch('/delete-videos', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ video_ids: videoIds })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            selectedVideos.forEach(video => {
+                video.style.animation = 'fadeOut 0.3s ease forwards';
+                setTimeout(() => video.remove(), 300);
+            });
+            toggleDeleteMode();
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+// Add this to your existing styles
+document.head.insertAdjacentHTML('beforeend', `
+    <style>
+        @keyframes fadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0.9); }
+        }
+    </style>
+`);
 </script>
 {% endblock %}

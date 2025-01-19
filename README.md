@@ -1,6 +1,6 @@
 # Illcutyou
 
-A stupid simplevideo clipping tool built with Flask, HTMX, and FFmpeg.
+A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 
 ## Current Features
 
@@ -12,6 +12,7 @@ A stupid simplevideo clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Video playback interface
 - ✅ Video thumbnails with lazy loading
 - ✅ Thumbnail placeholders during loading
+- ✅ Delete/remove videos from library (single or batch)
 
 ### Clipping
 - ✅ Set clip start/end times
@@ -41,7 +42,6 @@ A stupid simplevideo clipping tool built with Flask, HTMX, and FFmpeg.
 ## Missing Features
 
 ### Video Management
-- ❌ Delete/remove videos from library
 - ❌ Folder/tag organization for videos
 
 ### Clipping
@@ -83,6 +83,10 @@ A stupid simplevideo clipping tool built with Flask, HTMX, and FFmpeg.
    - View all clips or filter by source video
    - Delete individual clips or select multiple for batch deletion
    - View clip thumbnails for easy identification
+7. Manage your video library:
+   - Delete individual or multiple videos using the trash icon
+   - Select videos to delete with checkbox interface
+   - Confirm deletion with a simple click
 
 ## Tech Stack
 

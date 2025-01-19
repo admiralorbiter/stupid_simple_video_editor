@@ -155,3 +155,43 @@ def init_routes(app):
         
         # Return updated video list HTML
         return render_template('video_list.html', videos=videos)
+
+    @app.route('/delete-videos', methods=['POST'])
+    def delete_videos():
+        """Handle video deletion"""
+        video_ids = request.json.get('video_ids', [])
+        
+        if not video_ids:
+            return jsonify({'status': 'error', 'message': 'No videos selected'}), 400
+        
+        conn = get_db_connection()
+        try:
+            # Get video information before deletion
+            videos = conn.execute('''
+                SELECT id, file_path, thumbnail_path 
+                FROM videos 
+                WHERE id IN ({})
+            '''.format(','.join('?' * len(video_ids))), video_ids).fetchall()
+            
+            # Delete from database
+            conn.execute('''
+                DELETE FROM videos 
+                WHERE id IN ({})
+            '''.format(','.join('?' * len(video_ids))), video_ids)
+            
+            conn.commit()
+            
+            # Return success response with deleted IDs
+            return jsonify({
+                'status': 'success',
+                'deleted_ids': video_ids
+            })
+            
+        except Exception as e:
+            conn.rollback()
+            return jsonify({
+                'status': 'error',
+                'message': str(e)
+            }), 500
+        finally:
+            conn.close()
