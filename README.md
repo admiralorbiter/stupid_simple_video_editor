@@ -79,12 +79,10 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 
 ## Missing Features
 
-### UI / UX
-- ❌ Waveform visualization
-
 ### Advanced Features for Production
 - ❌ Transcoding options
 - ❌ Background task queue
+- ❌ Waveform visualization
 
 ## Setup
 
