@@ -1,0 +1,552 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Folders</h5>
+                    <button class="btn btn-primary" onclick="createFolder()">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="folder-tree">
+                        {% for folder in folders %}
+                            <div class="folder-item" 
+                                 style="margin-left: {{ folder.level * 20 }}px"
+                                 data-folder-id="{{ folder.id }}"
+                                 ondragover="onFolderDragOver(event)"
+                                 ondrop="onFolderDrop(event)"
+                                 onclick="toggleFolder(event, {{ folder.id }})">
+                                <div class="d-flex align-items-center">
+                                    {% if folder.has_children %}
+                                        <i class="bi bi-caret-right-fill me-1 folder-toggle"></i>
+                                    {% else %}
+                                        <i class="bi bi-dash me-1 text-muted"></i>
+                                    {% endif %}
+                                    <i class="bi bi-folder{% if folder.is_open %}-open{% endif %} me-2 text-warning"></i>
+                                    <span class="folder-name">{{ folder.name }}</span>
+                                    <div class="folder-actions ms-auto">
+                                        <i class="bi bi-three-dots-vertical" onclick="showFolderMenu(event, {{ folder.id }})"></i>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Tags</h5>
+                    <button class="btn btn-primary" onclick="createTag()">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div id="tag-list">
+                        {% for tag in tags %}
+                            <div class="tag-item" 
+                                 draggable="true" 
+                                 data-tag-id="{{ tag.id }}"
+                                 data-tag-color="{{ tag.color }}"
+                                 data-tag-name="{{ tag.name }}"
+                                 ondragstart="onTagDragStart(event)">
+                                <span class="badge" style="background-color: {{ tag.color }}">
+                                    {{ tag.name }} ({{ tag.video_count }})
+                                </span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">Videos</h5>
+                        <div>
+                            <button class="btn btn-outline-primary" onclick="moveSelectedVideos()">
+                                Move to Folder
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="video-grid" class="row g-3">
+                        {% for video in videos %}
+                            <div class="col-12 video-item" 
+                                 data-video-id="{{ video.id }}"
+                                 ondragover="onDragOver(event)"
+                                 ondrop="onDrop(event)">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox" class="form-check-input me-3">
+                                    <div class="video-info">
+                                        <h6 class="mb-1">{{ video.title }}</h6>
+                                        {% if video.folders %}
+                                            <small class="text-muted">
+                                                <i class="bi bi-folder me-1"></i>{{ video.folders }}
+                                            </small>
+                                        {% endif %}
+                                        <div class="video-tags mt-1">
+                                            {% if video.tags %}
+                                                {% for tag in video.tags %}
+                                                    <span class="badge" style="background-color: {{ tag.color }}">
+                                                        {{ tag.name }}
+                                                    </span>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add this modal HTML at the bottom of your content block -->
+<div class="modal fade" id="folderSelectModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Folder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="folder-select-list">
+                    {% for folder in folders %}
+                        <div class="folder-select-item" 
+                             style="padding-left: {{ folder.level * 20 }}px"
+                             data-folder-id="{{ folder.id }}">
+                            <i class="bi bi-folder me-2 text-warning"></i>
+                            {{ folder.name }}
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmFolderSelection()">Move</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add these styles -->
+<style>
+.folder-item {
+    padding: 0.5rem;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.folder-item:hover {
+    background-color: var(--bs-light);
+}
+
+.folder-item.active {
+    background-color: var(--bs-primary-bg-subtle);
+}
+
+.folder-item .folder-actions {
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.folder-item:hover .folder-actions {
+    opacity: 1;
+}
+
+.folder-toggle {
+    transition: transform 0.2s ease;
+}
+
+.folder-item.open .folder-toggle {
+    transform: rotate(90deg);
+}
+
+.folder-name {
+    user-select: none;
+}
+
+/* Folder drag and drop styles */
+.folder-item.drag-over {
+    background-color: var(--bs-primary-bg-subtle);
+    transform: translateX(5px);
+}
+
+.tag-item {
+    display: inline-block;
+    margin: 0.25rem;
+    cursor: grab;
+}
+
+.tag-item.dragging {
+    opacity: 0.5;
+}
+
+.video-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--bs-border-color);
+    transition: all 0.2s ease;
+}
+
+.video-item:last-child {
+    border-bottom: none;
+}
+
+.video-item.drag-over {
+    background-color: var(--bs-light);
+    transform: translateX(5px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.video-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.badge {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.badge:hover {
+    transform: scale(1.05);
+}
+
+.folder-select-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.folder-select-item {
+    padding: 8px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.folder-select-item:hover {
+    background-color: var(--bs-light);
+}
+
+.folder-select-item.selected {
+    background-color: var(--bs-primary-bg-subtle);
+}
+</style>
+
+{% block extra_js %}
+<script>
+async function createFolder() {
+    const name = await showPrompt('Enter folder name:');
+    if (!name) return;
+    
+    try {
+        const response = await fetch('/api/folders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name })
+        });
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+            location.reload(); // Refresh to show new folder
+        }
+    } catch (error) {
+        console.error('Error creating folder:', error);
+    }
+}
+
+async function createTag() {
+    const name = await showPrompt('Enter tag name:');
+    if (!name) return;
+    
+    const color = '#' + Math.floor(Math.random()*16777215).toString(16); // Random color
+    
+    try {
+        const response = await fetch('/api/tags', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name, color })
+        });
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+            location.reload(); // Refresh to show new tag
+        }
+    } catch (error) {
+        console.error('Error creating tag:', error);
+    }
+}
+
+let folderSelectModal;
+let selectedFolderId = null;
+
+function moveSelectedVideos() {
+    const selectedVideos = getSelectedVideoIds();
+    if (selectedVideos.length === 0) {
+        alert('Please select videos to move');
+        return;
+    }
+    
+    // Initialize modal if not already done
+    if (!folderSelectModal) {
+        folderSelectModal = new bootstrap.Modal(document.getElementById('folderSelectModal'));
+        
+        // Add click handlers to folder items
+        document.querySelectorAll('.folder-select-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.folder-select-item').forEach(i => 
+                    i.classList.remove('selected'));
+                item.classList.add('selected');
+                selectedFolderId = item.dataset.folderId;
+            });
+        });
+    }
+    
+    // Reset selection
+    selectedFolderId = null;
+    document.querySelectorAll('.folder-select-item').forEach(i => 
+        i.classList.remove('selected'));
+    
+    // Show modal
+    folderSelectModal.show();
+}
+
+async function confirmFolderSelection() {
+    if (!selectedFolderId) {
+        alert('Please select a folder');
+        return;
+    }
+    
+    const selectedVideos = getSelectedVideoIds();
+    
+    try {
+        const response = await fetch('/api/videos/organize', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_ids: selectedVideos,
+                folder_ids: [selectedFolderId]
+            })
+        });
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+            folderSelectModal.hide();
+            location.reload();
+        }
+    } catch (error) {
+        console.error('Error moving videos:', error);
+    }
+}
+
+function getSelectedVideoIds() {
+    const checkboxes = document.querySelectorAll('#video-grid input[type="checkbox"]:checked');
+    return Array.from(checkboxes).map(cb => cb.closest('.video-item').dataset.videoId);
+}
+
+async function showPrompt(message) {
+    return prompt(message);
+}
+
+async function showPromptWithElement(message, element) {
+    // You might want to replace this with a modal dialog
+    return prompt(message);
+}
+
+// Drag and Drop functionality
+function onTagDragStart(event) {
+    const tag = event.target.closest('.tag-item');
+    event.dataTransfer.setData('application/json', JSON.stringify({
+        id: tag.dataset.tagId,
+        name: tag.dataset.tagName,
+        color: tag.dataset.tagColor
+    }));
+    event.target.classList.add('dragging');
+}
+
+function onDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function onDragLeave(event) {
+    event.currentTarget.classList.remove('drag-over');
+}
+
+function onDrop(event) {
+    event.preventDefault();
+    const videoItem = event.currentTarget;
+    videoItem.classList.remove('drag-over');
+    
+    const tagData = JSON.parse(event.dataTransfer.getData('application/json'));
+    const videoId = videoItem.dataset.videoId;
+    
+    // Add visual feedback immediately
+    const tagsContainer = videoItem.querySelector('.video-tags');
+    const newTag = document.createElement('span');
+    newTag.className = 'badge';
+    newTag.style.backgroundColor = tagData.color;
+    newTag.textContent = tagData.name;
+    tagsContainer.appendChild(newTag);
+    
+    // Call API to add tag to video
+    fetch('/api/videos/organize', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            video_ids: [videoId],
+            tag_ids: [tagData.id]
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status !== 'success') {
+            // Remove the tag if the API call failed
+            newTag.remove();
+        }
+    })
+    .catch(error => {
+        console.error('Error adding tag:', error);
+        newTag.remove();
+    });
+}
+
+// Visual feedback during drag
+document.querySelectorAll('.tag-item').forEach(tag => {
+    tag.addEventListener('dragend', (e) => {
+        e.target.classList.remove('dragging');
+    });
+});
+
+function toggleFolder(event, folderId) {
+    event.preventDefault();
+    const folderItem = event.currentTarget;
+    folderItem.classList.toggle('open');
+    
+    // Update folder state in database
+    fetch('/api/folders/' + folderId + '/toggle', {
+        method: 'POST'
+    }).catch(error => {
+        console.error('Error toggling folder:', error);
+    });
+}
+
+function showFolderMenu(event, folderId) {
+    event.stopPropagation();
+    // Show a context menu with folder actions
+    const menu = document.createElement('div');
+    menu.className = 'dropdown-menu show';
+    menu.style.position = 'fixed';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+    
+    menu.innerHTML = `
+        <a class="dropdown-item" href="#" onclick="renameFolder(${folderId})">
+            <i class="bi bi-pencil me-2"></i>Rename
+        </a>
+        <a class="dropdown-item" href="#" onclick="createSubfolder(${folderId})">
+            <i class="bi bi-folder-plus me-2"></i>New Subfolder
+        </a>
+        <div class="dropdown-divider"></div>
+        <a class="dropdown-item text-danger" href="#" onclick="deleteFolder(${folderId})">
+            <i class="bi bi-trash me-2"></i>Delete
+        </a>
+    `;
+    
+    document.body.appendChild(menu);
+    
+    // Close menu when clicking outside
+    function closeMenu(e) {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    }
+    
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+async function renameFolder(folderId) {
+    const name = await showPrompt('Enter new folder name:');
+    if (!name) return;
+    
+    try {
+        const response = await fetch('/api/folders/' + folderId, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        }
+    } catch (error) {
+        console.error('Error renaming folder:', error);
+    }
+}
+
+async function createSubfolder(parentId) {
+    const name = await showPrompt('Enter subfolder name:');
+    if (!name) return;
+    
+    try {
+        const response = await fetch('/api/folders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ name, parent_id: parentId })
+        });
+        
+        if (response.ok) {
+            location.reload();
+        }
+    } catch (error) {
+        console.error('Error creating subfolder:', error);
+    }
+}
+
+function onFolderDragOver(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function onFolderDrop(event) {
+    event.preventDefault();
+    const folderItem = event.currentTarget;
+    folderItem.classList.remove('drag-over');
+    
+    // Handle video drop into folder
+    const videoIds = getSelectedVideoIds();
+    const folderId = folderItem.dataset.folderId;
+    
+    moveVideosToFolder(videoIds, folderId);
+}
+</script>
+{% endblock %}
+{% endblock %} 

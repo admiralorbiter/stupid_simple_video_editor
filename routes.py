@@ -13,6 +13,7 @@ from helper import *
 from clip_routes import init_clip_routes
 from auth_routes import init_auth_routes
 from video_routes import init_video_routes
+from organization_routes import init_organization_routes
 
 def init_routes(app):
     """Initialize routes and setup database"""
@@ -20,6 +21,7 @@ def init_routes(app):
     init_clip_routes(app)
     init_auth_routes(app)
     init_video_routes(app)
+    init_organization_routes(app)  # Add this line
     
     # Clean up orphaned thumbnails on startup
     cleanup_orphaned_thumbnails()
@@ -84,6 +86,51 @@ def init_routes(app):
                     thumbnail_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (video_id) REFERENCES videos (id)
+                )
+            ''')
+
+            # Create folders table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS folders (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    parent_id INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (parent_id) REFERENCES folders(id)
+                )
+            ''')
+
+            # Create tags table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tags (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    color TEXT DEFAULT '#6c757d',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Create video_folders junction table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS video_folders (
+                    video_id INTEGER,
+                    folder_id INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (video_id, folder_id),
+                    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+                    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
+                )
+            ''')
+
+            # Create video_tags junction table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS video_tags (
+                    video_id INTEGER,
+                    tag_id INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (video_id, tag_id),
+                    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
+                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
                 )
             ''')
             

@@ -14,6 +14,17 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Thumbnail placeholders during loading
 - ✅ Delete/remove videos from library (single or batch)
 
+### Organization
+- ✅ Create and manage folders
+- ✅ Nested folder hierarchy
+- ✅ Create and manage tags with custom colors
+- ✅ Drag and drop tags onto videos
+- ✅ Move videos to folders via modal interface
+- ✅ Visual folder tree with collapsible sections
+- ✅ Batch video organization
+- ✅ Tag counts and video counts
+- ✅ Context menus for folder management
+
 ### Clipping
 - ✅ Set clip start/end times
 - ✅ Name and create clips
@@ -38,11 +49,19 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Improved text contrast and readability
 - ✅ Loading states and indicators
 - ✅ Smooth transitions and animations
+- ✅ Drag and drop interactions
+- ✅ Interactive folder tree
+- ✅ Modal dialogs for organization
 
 ## Missing Features
 
-### Video Management
-- ❌ Folder/tag organization for videos
+### Organization
+- ❌ Folder reordering
+- ❌ Folder state persistence
+- ❌ Folder search/filter
+- ❌ Tag categories
+- ❌ Tag search/filter
+- ❌ Bulk tag management
 
 ### Clipping
 - ❌ Clip renaming
@@ -87,10 +106,16 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
    - Delete individual or multiple videos using the trash icon
    - Select videos to delete with checkbox interface
    - Confirm deletion with a simple click
+8. Organize your videos:
+   - Create folders and subfolders
+   - Create tags with custom colors
+   - Drag and drop tags onto videos
+   - Move videos to folders using the modal interface
+   - Use context menus for folder management
 
 ## Tech Stack
 
-- Frontend: HTML, Bootstrap, HTMX
+- Frontend: HTML, Bootstrap, HTMX, JavaScript
 - Backend: Python, Flask
 - Database: SQLite
 - Video Processing: FFmpeg
