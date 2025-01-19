@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 from helper import *
+import time
 
 def init_clip_routes(app):
     @app.route('/create-clip', methods=['POST'])
@@ -240,78 +241,70 @@ def init_clip_routes(app):
     @app.route('/clips/batch-delete', methods=['DELETE'])
     def batch_delete_clips():
         """Delete multiple clips at once"""
-        print("=== Starting batch delete ===")
-        print(f"Form data: {request.form}")
-        print(f"Args: {request.args}")
-        
         try:
-            # Try to get clip IDs from both form data and query parameters
             clip_ids = request.form.getlist('clip-checkbox') or request.args.getlist('clip-checkbox')
             
-            print(f"Clip IDs received: {clip_ids}")
-            
             if not clip_ids:
-                print("No clip IDs found in request")
                 return """
                     <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
                         No clips selected for deletion
                     </div>
                 """
 
             conn = get_db_connection()
-            deleted_clips = []
+            deleted_clips = session.get('deleted_clips', [])
 
-            print(f"Processing {len(clip_ids)} clips for deletion")
             for clip_id in clip_ids:
-                try:
-                    print(f"Processing clip ID: {clip_id}")
-                    clip = conn.execute('''
-                        SELECT c.*, v.title as video_title 
-                        FROM clips c 
-                        JOIN videos v ON c.video_id = v.id 
-                        WHERE c.id = ?
-                    ''', (clip_id,)).fetchone()
+                clip = conn.execute('''
+                    SELECT c.*, v.title as video_title 
+                    FROM clips c 
+                    JOIN videos v ON c.video_id = v.id 
+                    WHERE c.id = ?
+                ''', (clip_id,)).fetchone()
+                
+                if clip:
+                    # Store clip info for restoration
+                    deleted_clips.append({
+                        'id': clip_id,
+                        'path': clip['clip_path'],
+                        'batch': True,  # Mark as part of batch deletion
+                        'batch_id': int(time.time())  # Add timestamp as batch ID
+                    })
                     
-                    if clip:
-                        print(f"Found clip: {dict(clip)}")
-                        deleted_clips.append({
-                            'id': clip_id,
-                            'path': clip['clip_path']
-                        })
-                        
-                        print(f"Backing up clip {clip_id}")
-                        conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
-                        conn.execute('INSERT INTO clips_backup SELECT * FROM clips WHERE id = ?', (clip_id,))
-                        
-                        if os.path.exists(clip['clip_path']):
-                            temp_path = clip['clip_path'] + '.deleted'
-                            print(f"Moving file from {clip['clip_path']} to {temp_path}")
-                            if os.path.exists(temp_path):
-                                os.remove(temp_path)
-                            os.rename(clip['clip_path'], temp_path)
-                        
-                        print(f"Deleting clip {clip_id} from database")
-                        conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
-                    else:
-                        print(f"Clip {clip_id} not found in database")
-                        
-                except Exception as e:
-                    print(f"Error processing clip {clip_id}: {str(e)}")
-                    continue
+                    # Backup clip data
+                    conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
+                    conn.execute('INSERT INTO clips_backup SELECT * FROM clips WHERE id = ?', (clip_id,))
+                    
+                    # Move file to temporary location
+                    if os.path.exists(clip['clip_path']):
+                        temp_path = clip['clip_path'] + '.deleted'
+                        if os.path.exists(temp_path):
+                            os.remove(temp_path)
+                        os.rename(clip['clip_path'], temp_path)
+                    
+                    conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
 
             conn.commit()
-            print(f"Stored {len(deleted_clips)} clips in session for restoration")
             session['deleted_clips'] = deleted_clips
             
-            # Clean up orphaned thumbnails after all deletions
+            # Clean up orphaned thumbnails
             cleanup_orphaned_thumbnails()
             
-            clips = get_clips_data()
-            print("Returning updated template")
-            return render_template('clips_list.html', clips=clips)
+            return """
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    {} clips deleted successfully
+                    <button class="btn btn-link text-success" 
+                            onclick="restoreBatchClips({})">
+                        Undo Batch Delete
+                    </button>
+                </div>
+                {}
+            """.format(len(clip_ids), deleted_clips[-1]['batch_id'], 
+                      render_template('clips_list.html', clips=get_clips_data()))
             
         except Exception as e:
-            print(f"Error in batch delete: {str(e)}")
             if 'conn' in locals():
                 conn.rollback()
             return f"""
@@ -323,68 +316,65 @@ def init_clip_routes(app):
         finally:
             if 'conn' in locals():
                 conn.close()
-            print("=== Batch delete completed ===")
 
-    @app.route('/clips/restore/<int:clip_id>', methods=['POST'])
-    def restore_clip(clip_id):
-        """Restore a deleted clip"""
+    @app.route('/clips/restore-batch/<int:batch_id>', methods=['POST'])
+    def restore_batch_clips(batch_id):
+        """Restore a batch of deleted clips"""
         try:
             deleted_clips = session.get('deleted_clips', [])
-            clip_info = next((clip for clip in deleted_clips if int(clip['id']) == clip_id), None)
+            batch_clips = [clip for clip in deleted_clips if clip.get('batch_id') == batch_id]
             
-            if clip_info:
+            if batch_clips:
                 conn = get_db_connection()
-                try:
-                    # Restore physical file
-                    temp_path = clip_info['path'] + '.deleted'
-                    if os.path.exists(temp_path):
-                        if os.path.exists(clip_info['path']):
-                            os.remove(clip_info['path'])  # Remove if exists
-                        os.rename(temp_path, clip_info['path'])
-                    
-                    # Get the clip data from backup
-                    clip_data = conn.execute('''
-                        SELECT video_id, clip_name, start_time, end_time, clip_path 
-                        FROM clips_backup WHERE id = ?
-                    ''', (clip_id,)).fetchone()
-                    
-                    if clip_data:
-                        # Remove any existing entry in clips table
-                        conn.execute('DELETE FROM clips WHERE id = ?', (clip_id,))
+                restored_count = 0
+                
+                for clip_info in batch_clips:
+                    try:
+                        # Restore physical file
+                        temp_path = clip_info['path'] + '.deleted'
+                        if os.path.exists(temp_path):
+                            if os.path.exists(clip_info['path']):
+                                os.remove(clip_info['path'])
+                            os.rename(temp_path, clip_info['path'])
                         
-                        # Reinsert the clip
-                        conn.execute('''
-                            INSERT INTO clips 
-                            (id, video_id, clip_name, start_time, end_time, clip_path)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        ''', (clip_id, clip_data[0], clip_data[1], clip_data[2], 
-                              clip_data[3], clip_data[4]))
+                        # Restore from backup
+                        clip_data = conn.execute('''
+                            SELECT video_id, clip_name, start_time, end_time, clip_path 
+                            FROM clips_backup WHERE id = ?
+                        ''', (clip_info['id'],)).fetchone()
                         
-                        # Clean up backup
-                        conn.execute('DELETE FROM clips_backup WHERE id = ?', (clip_id,))
-                        conn.commit()
-                    
-                    # Remove from deleted clips session
-                    session['deleted_clips'] = [c for c in deleted_clips if int(c['id']) != clip_id]
-                    
-                    return render_template('clips_list.html', clips=get_clips_data())
-                finally:
-                    conn.close()
-            
+                        if clip_data:
+                            conn.execute('DELETE FROM clips WHERE id = ?', (clip_info['id'],))
+                            conn.execute('''
+                                INSERT INTO clips 
+                                (id, video_id, clip_name, start_time, end_time, clip_path)
+                                VALUES (?, ?, ?, ?, ?, ?)
+                            ''', (clip_info['id'], clip_data[0], clip_data[1], 
+                                  clip_data[2], clip_data[3], clip_data[4]))
+                            restored_count += 1
+                    except Exception as e:
+                        print(f"Error restoring clip {clip_info['id']}: {str(e)}")
+                        continue
+                
+                # Update session
+                session['deleted_clips'] = [c for c in deleted_clips if c.get('batch_id') != batch_id]
+                conn.commit()
+                
+                return render_template('clips_list.html', clips=get_clips_data())
+                
             return """
                 <div class="alert alert-danger">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    Clip not found in deleted items
+                    Batch not found in deleted items
                 </div>
             """
         except Exception as e:
-            print(f"Error restoring clip: {str(e)}")
             return f"""
                 <div class="alert alert-danger">
                     <i class="bi bi-exclamation-triangle me-2"></i>
-                    Error restoring clip: {str(e)}
+                    Error restoring batch: {str(e)}
                 </div>
-            """ 
+            """
 
     @app.route('/select-clips-folder')
     def select_clips_folder():
