@@ -7,120 +7,133 @@ from helper import *
 import time
 import json
 from werkzeug.utils import secure_filename
+import math
 
 def init_clip_routes(app):
     @app.route('/create-clip', methods=['POST'])
     def create_clip():
         """Create a new clip from a video"""
-        video_id = request.form.get('video_id')
-        clip_name = request.form.get('clip_name')
-        segments_str = request.form.get('segments', '[]')
-        
         try:
-            segments = json.loads(segments_str)
+            video_id = request.form.get('video_id')
+            clip_name = request.form.get('clip_name')
+            segments_data = request.form.get('segments')
+            
+            print(f"Received segments data: {segments_data}")
+            segments_data = json.loads(segments_data)
+            segments = segments_data.get('segments', [])
+            
             if not segments:
                 return jsonify({
                     'status': 'error',
                     'message': 'No segments provided'
                 }), 400
-
-            # Get first and last times for the clip's overall start/end
-            first_segment = min(segments, key=lambda x: timeToSeconds(x['start']))
-            last_segment = max(segments, key=lambda x: timeToSeconds(x['end']))
             
             conn = get_db_connection()
-            try:
-                # Get video info
-                video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
-                                   [video_id]).fetchone()
-                
-                if not video:
-                    return jsonify({'status': 'error', 'message': 'Video not found'}), 404
-
-                # Ensure CLIPS_FOLDER exists
-                if 'CLIPS_FOLDER' not in app.config:
-                    app.config['CLIPS_FOLDER'] = os.path.join(os.path.dirname(app.instance_path), 'clips')
-                
-                output_dir = os.path.join(app.config['CLIPS_FOLDER'], str(video_id))
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = os.path.join(output_dir, f"{secure_filename(clip_name)}.mp4")
-
-                # Create FFmpeg filter complex
-                filter_complex = create_segment_filter(video['file_path'], segments)
-                
-                # Execute FFmpeg command
-                cmd = [
-                    'ffmpeg', '-i', video['file_path'],
-                    '-filter_complex', filter_complex,
-                    '-c:v', 'libx264', '-c:a', 'aac',
-                    '-y',
-                    output_path
-                ]
-                
-                print(f"Executing FFmpeg command: {' '.join(cmd)}")
-                result = subprocess.run(cmd, capture_output=True, text=True)
-
-                if result.returncode != 0:
-                    print(f"FFmpeg error: {result.stderr}")
-                    return jsonify({
-                        'status': 'error',
-                        'message': f'FFmpeg error: {result.stderr}'
-                    }), 500
-
-                # Save clip info to database - matching your schema
-                clip_id = conn.execute('''
-                    INSERT INTO clips (
-                        video_id,
-                        clip_name,
-                        start_time,
-                        end_time,
-                        clip_path,
-                        thumbnail_path,
-                        created_at
-                    ) VALUES (?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
-                ''', [
-                    video_id,
-                    clip_name,
-                    first_segment['start'],
-                    last_segment['end'],
-                    output_path
-                ]).lastrowid
-
-                # Save individual segments
-                for segment in segments:
-                    conn.execute('''
-                        INSERT INTO clip_segments (
-                            clip_id,
-                            start_time,
-                            end_time,
-                            created_at
-                        ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    ''', [clip_id, segment['start'], segment['end']])
-
-                conn.commit()
-                return jsonify({
-                    'status': 'success',
-                    'message': 'Clip created successfully',
-                    'clip_id': clip_id
-                })
-
-            except Exception as e:
-                print(f"Error creating clip: {str(e)}")
-                if 'conn' in locals():
-                    conn.rollback()
+            video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
+                               [video_id]).fetchone()
+            
+            if not video:
                 return jsonify({
                     'status': 'error',
-                    'message': str(e)
+                    'message': 'Video not found'
+                }), 404
+            
+            # Create output directory if it doesn't exist
+            output_dir = os.path.join('clips', video_id)
+            os.makedirs(output_dir, exist_ok=True)
+            
+            # Generate output path
+            output_filename = secure_filename(clip_name) if clip_name else 'clippy'
+            if not output_filename.endswith('.mp4'):
+                output_filename += '.mp4'
+            output_path = os.path.join(output_dir, output_filename)
+            
+            # Create FFmpeg filter for trimming
+            filter_parts = []
+            for i, segment in enumerate(segments):
+                start = timeToSeconds(segment['start'])
+                end = timeToSeconds(segment['end'])
+                duration = end - start
+                filter_parts.append(f"[0:v]trim=start={start}:duration={duration},setpts=PTS-STARTPTS[v{i}];")
+                filter_parts.append(f"[0:a]atrim=start={start}:duration={duration},asetpts=PTS-STARTPTS[a{i}];")
+            
+            # Add concat if we have segments
+            n_segments = len(segments)
+            video_inputs = ''.join(f'[v{i}]' for i in range(n_segments))
+            audio_inputs = ''.join(f'[a{i}]' for i in range(n_segments))
+            filter_parts.append(f"{video_inputs}concat=n={n_segments}:v=1[outv];")
+            filter_parts.append(f"{audio_inputs}concat=n={n_segments}:v=0:a=1[outa]")
+            
+            filter_complex = ''.join(filter_parts)
+            print(f"Created filter complex: {filter_complex}")
+            
+            # Execute FFmpeg command
+            cmd = [
+                'ffmpeg', '-i', video['file_path'],
+                '-filter_complex', filter_complex,
+                '-map', '[outv]', '-map', '[outa]',
+                '-c:v', 'libx264', '-c:a', 'aac',
+                '-y', output_path
+            ]
+            
+            print(f"Executing FFmpeg command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                print(f"FFmpeg error: {result.stderr}")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'FFmpeg error: {result.stderr}'
                 }), 500
-            finally:
-                if 'conn' in locals():
-                    conn.close()
 
-        except json.JSONDecodeError:
+            # Save clip info to database - matching your schema
+            clip_id = conn.execute('''
+                INSERT INTO clips (
+                    video_id,
+                    clip_name,
+                    start_time,
+                    end_time,
+                    clip_path,
+                    thumbnail_path,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
+            ''', [
+                video_id,
+                clip_name,
+                segments[0]['start'],
+                segments[-1]['end'],
+                output_path
+            ]).lastrowid
+
+            # Save individual segments
+            for segment in segments:
+                conn.execute('''
+                    INSERT INTO clip_segments (
+                        clip_id,
+                        start_time,
+                        end_time,
+                        created_at
+                    ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ''', [clip_id, segment['start'], segment['end']])
+
+            conn.commit()
+            print("Clip created successfully")
+            return jsonify({
+                'status': 'success',
+                'clip_id': clip_id
+            })
+
+        except Exception as e:
+            print(f"Error creating clip: {str(e)}")
+            if 'conn' in locals():
+                conn.rollback()
             return jsonify({
                 'status': 'error',
-                'message': 'Invalid segments data'
-            }), 400
+                'message': str(e)
+            }), 500
+        finally:
+            if 'conn' in locals():
+                conn.close()
 
     @app.route('/clips', methods=['GET'])
     @app.route('/clips/<int:video_id>', methods=['GET'])
@@ -527,27 +540,27 @@ def timeToSeconds(time_str):
         print(f"Error converting time: {time_str}")
         raise e
 
-def create_segment_filter(input_path, segments):
-    """Create FFmpeg filter complex for removing multiple segments"""
+def create_segment_filter(segments):
+    """Create FFmpeg filter complex for keeping selected segments"""
     try:
         # Sort segments by start time
         segments = sorted(segments, key=lambda x: timeToSeconds(x['start']))
         
-        # Create trim filters for keeping sections between removed segments
+        # Create filters to keep only the selected segments
         filters = []
-        last_end = 0
         
         for segment in segments:
             start = timeToSeconds(segment['start'])
             end = timeToSeconds(segment['end'])
             
-            if start > last_end:
-                filters.append(f"between(t,{last_end},{start})")
-            last_end = end
+            # Only add valid segments
+            if not (math.isnan(start) or math.isnan(end)):
+                filters.append(f"between(t,{start},{end})")
         
-        # Add final section after last segment
-        filters.append(f"gte(t,{last_end})")
-        
+        if not filters:
+            raise ValueError("No valid segments provided")
+            
+        # Join filters with + to keep any matching segments
         return f"select='{'+'.join(filters)}',setpts=N/FRAME_RATE/TB"
     except Exception as e:
         print(f"Error creating filter: {str(e)}")
