@@ -342,12 +342,17 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         try {
             const response = await fetch('/browse-folder');
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
             const data = await response.json();
             
             if (data.status === 'success') {
                 selectedFolder.querySelector('.folder-path').textContent = data.folder;
                 selectedFolder.style.display = 'block';
                 scanButton.style.display = 'block';
+            } else if (data.status === 'error') {
+                console.error('Server error:', data.message);
             }
         } catch (error) {
             console.error('Error selecting folder:', error);

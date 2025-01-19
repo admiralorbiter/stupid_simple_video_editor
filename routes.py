@@ -21,7 +21,7 @@ def init_routes(app):
     init_clip_routes(app)
     init_auth_routes(app)
     init_video_routes(app)
-    init_organization_routes(app)  # Add this line
+    init_organization_routes(app)
     
     # Clean up orphaned thumbnails on startup
     cleanup_orphaned_thumbnails()
@@ -101,13 +101,24 @@ def init_routes(app):
                 )
             ''')
 
-            # Create tags table
+            # Create tag_categories table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tag_categories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Update tags table to include category_id
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS tags (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL UNIQUE,
                     color TEXT DEFAULT '#6c757d',
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                    category_id INTEGER,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (category_id) REFERENCES tag_categories(id) ON DELETE SET NULL
                 )
             ''')
 

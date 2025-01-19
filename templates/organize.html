@@ -77,26 +77,65 @@
                                 <i class="bi bi-x"></i>
                             </button>
                         </div>
-                        <button class="btn btn-primary btn-sm" onclick="createTag()">
-                            <i class="bi bi-plus-lg"></i>
-                        </button>
+                        <div class="dropdown">
+                            <button class="btn btn-primary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#" onclick="createCategory()">New Category</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="createTag()">New Tag</a></li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body">
-                    <div id="tag-list">
-                        {% for tag in tags %}
-                            <div class="tag-item" 
-                                 draggable="true" 
-                                 data-tag-id="{{ tag.id }}"
-                                 data-tag-color="{{ tag.color }}"
-                                 data-tag-name="{{ tag.name }}"
-                                 ondragstart="onTagDragStart(event)">
-                                <span class="badge" style="background-color: {{ tag.color }}">
-                                    {{ tag.name }} ({{ tag.video_count }})
-                                </span>
-                            </div>
-                        {% endfor %}
+                    <!-- Uncategorized tags -->
+                    <div class="mb-4">
+                        <h6 class="mb-2">Uncategorized</h6>
+                        <div class="tag-group">
+                            {% if tags %}
+                                {% for tag in tags %}
+                                    <span class="tag-item badge"
+                                          draggable="true"
+                                          data-tag-id="{{ tag.id }}"
+                                          data-tag-name="{{ tag.name }}"
+                                          data-tag-color="{{ tag.color }}"
+                                          style="background-color: {{ tag.color }}">
+                                        {{ tag.name }}
+                                    </span>
+                                {% endfor %}
+                            {% else %}
+                                <em class="text-muted">No uncategorized tags</em>
+                            {% endif %}
+                        </div>
                     </div>
+
+                    <!-- Categories -->
+                    {% for category in categories %}
+                        <div class="tag-category mb-3"
+                             data-category-id="{{ category.id }}"
+                             ondragover="onDragOver(event)"
+                             ondragleave="onDragLeave(event)"
+                             ondrop="onCategoryDrop(event)">
+                            <h6 class="mb-2">{{ category.name }}</h6>
+                            <div class="tag-group">
+                                {% if category.tags %}
+                                    {% for tag in category.tags %}
+                                        <span class="tag-item badge"
+                                              draggable="true"
+                                              data-tag-id="{{ tag.id }}"
+                                              data-tag-name="{{ tag.name }}"
+                                              data-tag-color="{{ tag.color }}"
+                                              style="background-color: {{ tag.color }}">
+                                            {{ tag.name }}
+                                        </span>
+                                    {% endfor %}
+                                {% else %}
+                                    <em class="text-muted">No tags</em>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -119,7 +158,8 @@
                             <div class="col-12 video-item" 
                                  data-video-id="{{ video.id }}"
                                  ondragover="onDragOver(event)"
-                                 ondrop="onDrop(event)">
+                                 ondragleave="onDragLeave(event)"
+                                 ondrop="onVideoDrop(event)">
                                 <div class="d-flex align-items-center">
                                     <input type="checkbox" class="form-check-input me-3">
                                     <div class="video-info">
@@ -131,9 +171,9 @@
                                         {% endif %}
                                         <div class="video-tags mt-1">
                                             {% if video.tags %}
-                                                {% for tag in video.tags %}
-                                                    <span class="badge" style="background-color: {{ tag.color }}">
-                                                        {{ tag.name }}
+                                                {% for tag in video.tags.split(',') if tag %}
+                                                    <span class="badge me-1" style="background-color: {{ tag_colors.get(tag, '#6c757d') }}">
+                                                        {{ tag }}
                                                     </span>
                                                 {% endfor %}
                                             {% endif %}
@@ -223,9 +263,10 @@
 }
 
 .tag-item {
-    display: inline-block;
-    margin: 0.25rem;
     cursor: grab;
+    display: inline-block;
+    margin: 2px;
+    user-select: none;
 }
 
 .tag-item.dragging {
@@ -249,9 +290,11 @@
 }
 
 .video-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.video-tags .badge {
+    margin-right: 0.25rem;
 }
 
 .badge {
@@ -344,10 +387,158 @@
     white-space: normal;
     text-align: left;
 }
+
+.tag-category {
+    border-bottom: 1px solid var(--bs-border-color);
+    padding-bottom: 1rem;
+}
+
+.tag-category:last-child {
+    border-bottom: none;
+}
+
+.category-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.tag-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+}
+
+.tag-item:active {
+    cursor: grabbing;
+}
+
+.folder-item.drag-over {
+    background-color: var(--bs-primary-bg-subtle);
+}
+
+.drag-over {
+    background-color: rgba(0, 123, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.tag-category {
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+}
+
+.tag-category.drag-over {
+    border-color: var(--bs-primary);
+}
 </style>
 
 {% block extra_js %}
 <script>
+// Declare folderSelectModal only once at the top
+let folderSelectModal;
+
+document.addEventListener('DOMContentLoaded', function() {
+    folderSelectModal = new bootstrap.Modal(document.getElementById('folderSelectModal'));
+
+    // Initialize drag and drop handlers
+    document.querySelectorAll('.tag-item').forEach(tag => {
+        tag.addEventListener('dragstart', function(e) {
+            console.log('DragStart triggered for tag:', this.dataset);
+            e.dataTransfer.setData('application/json', JSON.stringify({
+                id: this.dataset.tagId,
+                name: this.dataset.tagName,
+                color: this.dataset.tagColor
+            }));
+            this.classList.add('dragging');
+        });
+
+        tag.addEventListener('dragend', function(e) {
+            console.log('DragEnd triggered');
+            this.classList.remove('dragging');
+        });
+    });
+
+    // Add event listeners to drop targets (categories and videos)
+    document.querySelectorAll('.tag-category, .video-item').forEach(dropTarget => {
+        dropTarget.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            this.classList.add('drag-over');
+        });
+
+        dropTarget.addEventListener('dragleave', function(e) {
+            this.classList.remove('drag-over');
+        });
+    });
+
+    // Add drop handlers for categories
+    document.querySelectorAll('.tag-category').forEach(category => {
+        category.addEventListener('drop', async function(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            
+            try {
+                const tagData = JSON.parse(e.dataTransfer.getData('application/json'));
+                console.log('Category drop - Tag data:', tagData);
+                
+                const response = await fetch(`/api/tags/${tagData.id}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        category_id: this.dataset.categoryId || null
+                    })
+                });
+
+                if (!response.ok) throw new Error('Failed to update tag');
+                location.reload();
+            } catch (error) {
+                console.error('Error in category drop:', error);
+                alert('Failed to move tag. Please try again.');
+            }
+        });
+    });
+
+    // Add drop handlers for videos
+    document.querySelectorAll('.video-item').forEach(video => {
+        video.addEventListener('drop', async function(e) {
+            e.preventDefault();
+            this.classList.remove('drag-over');
+            
+            try {
+                const tagData = JSON.parse(e.dataTransfer.getData('application/json'));
+                console.log('Video drop - Tag data:', tagData);
+                
+                const response = await fetch('/api/videos/organize', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        video_ids: [this.dataset.videoId],
+                        tag_ids: [tagData.id]
+                    })
+                });
+
+                if (!response.ok) throw new Error('Failed to add tag to video');
+                
+                // Add visual feedback
+                const tagsContainer = this.querySelector('.video-tags');
+                const newTag = document.createElement('span');
+                newTag.className = 'badge me-1';
+                newTag.style.backgroundColor = tagData.color;
+                newTag.textContent = tagData.name;
+                tagsContainer.appendChild(newTag);
+            } catch (error) {
+                console.error('Error in video drop:', error);
+                alert('Failed to add tag to video. Please try again.');
+            }
+        });
+    });
+});
+
 async function createFolder() {
     const name = await showPrompt('Enter folder name:');
     if (!name) return;
@@ -394,7 +585,6 @@ async function createTag() {
     }
 }
 
-let folderSelectModal;
 let selectedFolderId = null;
 
 function moveSelectedVideos() {
@@ -402,21 +592,6 @@ function moveSelectedVideos() {
     if (selectedVideos.length === 0) {
         alert('Please select videos to move');
         return;
-    }
-    
-    // Initialize modal if not already done
-    if (!folderSelectModal) {
-        folderSelectModal = new bootstrap.Modal(document.getElementById('folderSelectModal'));
-        
-        // Add click handlers to folder items
-        document.querySelectorAll('.folder-select-item').forEach(item => {
-            item.addEventListener('click', () => {
-                document.querySelectorAll('.folder-select-item').forEach(i => 
-                    i.classList.remove('selected'));
-                item.classList.add('selected');
-                selectedFolderId = item.dataset.folderId;
-            });
-        });
     }
     
     // Reset selection
@@ -472,72 +647,181 @@ async function showPromptWithElement(message, element) {
     return prompt(message);
 }
 
-// Drag and Drop functionality
+// Utility function to log drag and drop events
+function logEvent(name, event) {
+    console.log(`${name}:`, {
+        target: event.target,
+        currentTarget: event.currentTarget,
+        dataTransfer: event.dataTransfer?.types
+    });
+}
+
+// Debug logging function
+function debug(event, message, data = null) {
+    console.log(`[${event}]`, message, data);
+}
+
 function onTagDragStart(event) {
-    const tag = event.target.closest('.tag-item');
-    event.dataTransfer.setData('application/json', JSON.stringify({
-        id: tag.dataset.tagId,
-        name: tag.dataset.tagName,
-        color: tag.dataset.tagColor
-    }));
-    event.target.classList.add('dragging');
+    debug('DragStart', 'Event triggered');
+    
+    const tagItem = event.target.closest('.tag-item');
+    if (!tagItem) {
+        debug('DragStart', 'No tag-item found');
+        return;
+    }
+    
+    const tagData = {
+        id: tagItem.getAttribute('data-tag-id'),
+        name: tagItem.getAttribute('data-tag-name'),
+        color: tagItem.getAttribute('data-tag-color')
+    };
+    
+    debug('DragStart', 'Tag data:', tagData);
+    
+    // Store the data as a JSON string
+    event.dataTransfer.setData('application/json', JSON.stringify(tagData));
 }
 
 function onDragOver(event) {
     event.preventDefault();
+    debug('DragOver', 'Event triggered');
+    event.dataTransfer.dropEffect = 'move';
     event.currentTarget.classList.add('drag-over');
 }
 
 function onDragLeave(event) {
+    event.preventDefault();
+    debug('DragLeave', 'Event triggered');
     event.currentTarget.classList.remove('drag-over');
 }
 
-function onDrop(event) {
+function onTagDragEnd(event) {
+    debug('DragEnd', 'Event triggered');
+    const tagItem = event.target;
+    if (tagItem.classList.contains('tag-item')) {
+        tagItem.classList.remove('dragging');
+    }
+}
+
+async function onCategoryDrop(event) {
     event.preventDefault();
+    debug('CategoryDrop', 'Event triggered');
+    
+    const category = event.currentTarget;
+    category.classList.remove('drag-over');
+    
+    try {
+        const tagDataStr = event.dataTransfer.getData('application/json');
+        debug('CategoryDrop', 'Retrieved tag data:', tagDataStr);
+        
+        if (!tagDataStr) {
+            debug('CategoryDrop', 'No tag data found');
+            return;
+        }
+        
+        const tagData = JSON.parse(tagDataStr);
+        const categoryId = category.dataset.categoryId;
+        
+        debug('CategoryDrop', 'Processing drop', { 
+            tagData, 
+            categoryId,
+            category: category.outerHTML 
+        });
+        
+        const response = await fetch(`/api/tags/${tagData.id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                category_id: categoryId === '' ? null : parseInt(categoryId)
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        debug('CategoryDrop', 'Response:', data);
+        
+        if (data.status === 'success') {
+            // Add visual feedback before reload
+            const sourceCategory = document.querySelector(`.tag-item[data-tag-id="${tagData.id}"]`).parentElement;
+            const targetCategory = category.querySelector('.tag-group');
+            const tagElement = document.querySelector(`.tag-item[data-tag-id="${tagData.id}"]`);
+            
+            if (tagElement && targetCategory) {
+                targetCategory.appendChild(tagElement);
+                if (sourceCategory && sourceCategory.children.length === 0) {
+                    sourceCategory.innerHTML = '<em class="text-muted">No tags</em>';
+                }
+            }
+            
+            // Reload after a short delay to ensure the user sees the change
+            setTimeout(() => location.reload(), 500);
+        } else {
+            throw new Error(data.message || 'Failed to move tag');
+        }
+    } catch (error) {
+        console.error('Error moving tag:', error);
+        alert('Failed to move tag. Please try again.');
+    }
+}
+
+async function onVideoDrop(event) {
+    event.preventDefault();
+    debug('VideoDrop', 'Event triggered');
+    
     const videoItem = event.currentTarget;
     videoItem.classList.remove('drag-over');
     
-    const tagData = JSON.parse(event.dataTransfer.getData('application/json'));
-    const videoId = videoItem.dataset.videoId;
-    
-    // Add visual feedback immediately
-    const tagsContainer = videoItem.querySelector('.video-tags');
-    const newTag = document.createElement('span');
-    newTag.className = 'badge';
-    newTag.style.backgroundColor = tagData.color;
-    newTag.textContent = tagData.name;
-    tagsContainer.appendChild(newTag);
-    
-    // Call API to add tag to video
-    fetch('/api/videos/organize', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            video_ids: [videoId],
-            tag_ids: [tagData.id]
-        })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status !== 'success') {
-            // Remove the tag if the API call failed
-            newTag.remove();
+    try {
+        const tagDataStr = event.dataTransfer.getData('application/json');
+        debug('VideoDrop', 'Retrieved tag data:', tagDataStr);
+        
+        if (!tagDataStr) {
+            debug('VideoDrop', 'No tag data found');
+            return;
         }
-    })
-    .catch(error => {
-        console.error('Error adding tag:', error);
-        newTag.remove();
-    });
+        
+        const tagData = JSON.parse(tagDataStr);
+        const videoId = videoItem.dataset.videoId;
+        
+        debug('VideoDrop', 'Processing drop', { tagData, videoId });
+        
+        const response = await fetch('/api/videos/organize', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                video_ids: [videoId],
+                tag_ids: [tagData.id]
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        if (data.status === 'success') {
+            // Add visual feedback
+            const tagsContainer = videoItem.querySelector('.video-tags');
+            const newTag = document.createElement('span');
+            newTag.className = 'badge me-1';
+            newTag.style.backgroundColor = tagData.color;
+            newTag.textContent = tagData.name;
+            tagsContainer.appendChild(newTag);
+        } else {
+            throw new Error(data.message || 'Failed to add tag to video');
+        }
+    } catch (error) {
+        console.error('Error adding tag to video:', error);
+        alert('Failed to add tag to video. Please try again.');
+    }
 }
-
-// Visual feedback during drag
-document.querySelectorAll('.tag-item').forEach(tag => {
-    tag.addEventListener('dragend', (e) => {
-        e.target.classList.remove('dragging');
-    });
-});
 
 function toggleFolder(event, folderId) {
     event.preventDefault();
@@ -767,6 +1051,61 @@ function clearTagSearch() {
     searchInput.value = '';
     filterTags('');
 }
+
+function createCategory() {
+    const categoryName = prompt('Enter category name:');
+    if (!categoryName) return;
+
+    fetch('/api/categories', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: categoryName })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            window.location.reload();  // Refresh to show new category
+        } else {
+            alert('Error creating category: ' + data.message);
+        }
+    })
+    .catch(error => console.error('Error:', error));
+}
+
+function showCategoryMenu(event, categoryId) {
+    event.stopPropagation();
+    
+    // Create and show a Bootstrap dropdown menu
+    const menu = document.createElement('div');
+    menu.className = 'dropdown-menu show';
+    menu.style.position = 'fixed';
+    menu.style.left = event.pageX + 'px';
+    menu.style.top = event.pageY + 'px';
+    
+    menu.innerHTML = `
+        <a class="dropdown-item" href="#" onclick="renameCategory(${categoryId})">Rename</a>
+        <a class="dropdown-item text-danger" href="#" onclick="deleteCategory(${categoryId})">Delete</a>
+    `;
+    
+    document.body.appendChild(menu);
+    
+    // Close menu when clicking outside
+    const closeMenu = (e) => {
+        if (!menu.contains(e.target)) {
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
+        }
+    };
+    setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+function onTagDragStart(event) {
+    event.dataTransfer.setData('text/plain', event.target.dataset.tagId);
+}
+
+// Add other necessary functions (renameCategory, deleteCategory, etc.)
 </script>
 {% endblock %}
 {% endblock %} 

@@ -40,10 +40,15 @@ def init_video_routes(app):
     def browse_folder():
         """Open system folder browser dialog and return selected path"""
         try:
+            # Create and immediately withdraw the root window
             root = Tk()
             root.withdraw()
+            root.attributes('-topmost', True)  # Make sure it appears on top
             
-            folder_path = filedialog.askdirectory()
+            # Open the dialog
+            folder_path = filedialog.askdirectory(parent=root)
+            
+            # Clean up the root window
             root.destroy()
             
             if folder_path:
@@ -56,6 +61,7 @@ def init_video_routes(app):
                 'status': 'cancelled'
             })
         except Exception as e:
+            # Make sure to clean up even if there's an error
             try:
                 root.destroy()
             except:
