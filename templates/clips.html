@@ -4,26 +4,47 @@
 
 {% block extra_css %}
 <style>
-    .clips-container {
+    .clips-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 2rem;
-        padding: 2rem;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 1.5rem;
+        padding: 1rem;
     }
 
     .clip-card {
-        display: flex;
-        flex-direction: column;
         background-color: white;
         border-radius: 1rem;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         overflow: hidden;
+        position: relative;
     }
 
     .clip-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        transform: translateY(-4px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .clip-thumbnail {
+        position: relative;
+        width: 100%;
+        height: 180px;
+        background-color: var(--dark-purple);
+    }
+
+    .clip-checkbox-wrapper {
+        position: absolute;
+        top: 0.75rem;
+        left: 0.75rem;
+        z-index: 2;
+    }
+
+    .clip-checkbox-wrapper .form-check-input {
+        width: 1.25rem;
+        height: 1.25rem;
+        cursor: pointer;
+        background-color: rgba(255, 255, 255, 0.9);
+        border: 2px solid var(--pale-dogwood);
     }
 
     .clip-header {
@@ -32,32 +53,70 @@
         padding: 1rem;
     }
 
+    .clip-title-container {
+        width: 100%;
+    }
+
+    .clip-name {
+        font-size: 1.1rem;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
     .clip-body {
         padding: 1rem;
     }
 
     .clip-info {
-        color: var(--raisin-black);
         margin-bottom: 1rem;
     }
 
-    .clip-actions {
+    .info-item {
         display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        color: var(--raisin-black);
+    }
+
+    .info-item i {
+        color: var(--redwood);
+        width: 1rem;
+    }
+
+    .clip-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 0.5rem;
     }
 
     .btn-clip {
-        background-color: var(--redwood);
-        color: var(--pale-dogwood);
-        border: none;
-        padding: 0.5rem 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
         border-radius: 0.5rem;
-        transition: background-color 0.3s ease;
+        transition: all 0.2s ease;
     }
 
-    .btn-clip:hover {
-        background-color: var(--eggplant);
-        color: var(--pale-dogwood);
+    .btn-clip i {
+        font-size: 1.1rem;
+    }
+
+    #select-all-btn, #batch-delete-btn {
+        padding: 0.5rem 1rem;
+    }
+
+    .rename-input {
+        width: calc(100% - 2rem);
+        background-color: var(--pale-dogwood);
+        color: var(--dark-purple);
+        border: none;
+        border-radius: 0.25rem;
+        padding: 0.25rem 0.5rem;
     }
 
     #alert-container {
@@ -94,14 +153,6 @@
         text-decoration: underline !important;
     }
 
-    .clip-thumbnail {
-        width: 100%;
-        height: 180px;
-        overflow: hidden;
-        position: relative;
-        background-color: var(--dark-purple);
-    }
-
     .clip-thumbnail-img {
         width: 100%;
         height: 100%;
@@ -118,12 +169,6 @@
         font-size: 2rem;
     }
 
-    .clip-name {
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-    }
-
     .rename-icon {
         opacity: 0;
         transition: opacity 0.2s ease;
@@ -133,22 +178,6 @@
 
     .clip-name:hover .rename-icon {
         opacity: 1;
-    }
-
-    .rename-input {
-        background-color: var(--pale-dogwood);
-        color: var(--dark-purple);
-        border: 1px solid var(--redwood);
-        border-radius: 4px;
-        padding: 2px 6px;
-        margin: -2px 0;
-        width: calc(100% - 30px);
-    }
-
-    .rename-input:focus {
-        outline: none;
-        border-color: var(--eggplant);
-        box-shadow: 0 0 0 2px rgba(var(--eggplant-rgb), 0.25);
     }
 </style>
 {% endblock %}
@@ -160,6 +189,20 @@
 </div>
 
 <div id="alert-container"></div>
+
+<div class="search-container mb-4">
+    <div class="row">
+        <div class="col-md-6 mx-auto">
+            <input type="search" 
+                   name="q" 
+                   class="form-control" 
+                   placeholder="Search clips by name..."
+                   hx-get="/clips/search"
+                   hx-trigger="keyup changed delay:500ms"
+                   hx-target="#clips-container">
+        </div>
+    </div>
+</div>
 
 <div class="clips-container" id="clips-container">
     {% include 'clips_list.html' %}

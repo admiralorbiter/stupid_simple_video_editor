@@ -448,3 +448,49 @@ def init_clip_routes(app):
         finally:
             if 'conn' in locals():
                 conn.close()
+
+    @app.route('/clips/search', methods=['GET'])
+    def search_clips():
+        """Search clips by name"""
+        query = request.args.get('q', '').strip()
+        
+        sql = '''
+            SELECT 
+                c.id,
+                c.clip_name,
+                c.start_time,
+                c.end_time,
+                c.clip_path,
+                c.created_at,
+                c.thumbnail_path,
+                v.title as video_title
+            FROM clips c 
+            JOIN videos v ON c.video_id = v.id 
+            WHERE 1=1
+        '''
+        params = []
+        
+        if query:
+            sql += ' AND c.clip_name LIKE ?'
+            params.append(f'%{query}%')
+        
+        sql += ' ORDER BY c.created_at DESC'
+        
+        conn = get_db_connection()
+        clips = conn.execute(sql, params).fetchall()
+        
+        # Format clips data to match the structure expected by the template
+        clips_data = [{
+            'id': clip[0],
+            'name': clip[1],
+            'start_time': clip[2],
+            'end_time': clip[3],
+            'path': clip[4],
+            'created_at': clip[5],
+            'thumbnail_path': clip[6],
+            'video_title': clip[7]
+        } for clip in clips]
+        
+        conn.close()
+        
+        return render_template('clips_list.html', clips=clips_data)

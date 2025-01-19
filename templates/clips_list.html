@@ -1,22 +1,25 @@
 {% if clips %}
-    <div class="mb-3">
-        <button class="btn btn-clip" id="select-all-btn">
-            <i class="bi bi-check-square me-1"></i>Select All
-        </button>
-        <button class="btn btn-clip" 
-                id="batch-delete-btn" 
-                style="display: none;"
-                hx-delete="/clips/batch-delete"
-                hx-trigger="confirmed"
-                hx-include="[name='clip-checkbox']:checked"
-                hx-target="#clips-container"
-                hx-swap="innerHTML"
-                hx-headers='{"Content-Type": "application/x-www-form-urlencoded"}'>
-            <i class="bi bi-trash me-1"></i>Delete Selected
-            <span class="badge bg-light text-dark ms-1" id="selected-count">0</span>
-        </button>
+    <div class="mb-4 d-flex justify-content-between align-items-center">
+        <div class="d-flex gap-2">
+            <button class="btn btn-clip" id="select-all-btn">
+                <i class="bi bi-check-square me-1"></i>Select All
+            </button>
+            <button class="btn btn-clip" 
+                    id="batch-delete-btn" 
+                    style="display: none;"
+                    hx-delete="/clips/batch-delete"
+                    hx-trigger="confirmed"
+                    hx-include="[name='clip-checkbox']:checked"
+                    hx-target="#clips-container"
+                    hx-swap="innerHTML"
+                    hx-headers='{"Content-Type": "application/x-www-form-urlencoded"}'>
+                <i class="bi bi-trash me-1"></i>Delete Selected
+                <span class="badge bg-light text-dark ms-1" id="selected-count">0</span>
+            </button>
+        </div>
+        <div id="selected-clips-container"></div>
     </div>
-    <form id="clips-form">
+    <div class="clips-grid">
         {% for clip in clips %}
         <div class="clip-card" id="clip-{{ clip.id }}">
             <div class="clip-thumbnail">
@@ -29,33 +32,40 @@
                         <i class="bi bi-camera-video"></i>
                     </div>
                 {% endif %}
+                <div class="clip-checkbox-wrapper">
+                    <input type="checkbox" 
+                           name="clip-checkbox" 
+                           value="{{ clip.id }}" 
+                           class="form-check-input clip-checkbox">
+                </div>
             </div>
-            <div class="clip-header d-flex align-items-center">
-                <input type="checkbox" 
-                       name="clip-checkbox" 
-                       value="{{ clip.id }}" 
-                       class="form-check-input me-2 clip-checkbox">
-                <div class="clip-title-container w-100">
-                    <h5 class="mb-0 clip-name" 
+            <div class="clip-header">
+                <div class="clip-title-container">
+                    <h5 class="mb-1 clip-name" 
                         data-clip-id="{{ clip.id }}"
                         onclick="startRename(event, {{ clip.id }})">
                         <span class="clip-name-text">{{ clip.name }}</span>
                         <i class="bi bi-pencil-square ms-2 rename-icon"></i>
                     </h5>
-                    <small>From: {{ clip.video_title }}</small>
+                    <small class="text-muted">From: {{ clip.video_title }}</small>
                 </div>
             </div>
             <div class="clip-body">
                 <div class="clip-info">
-                    <div><i class="bi bi-clock me-2"></i>Start: {{ clip.start_time }}</div>
-                    <div><i class="bi bi-clock-history me-2"></i>End: {{ clip.end_time }}</div>
-                    <div><i class="bi bi-calendar me-2"></i>Created: {{ clip.created_at|datetime }}</div>
+                    <div class="info-item">
+                        <i class="bi bi-clock"></i>
+                        <span>{{ clip.start_time }} - {{ clip.end_time }}</span>
+                    </div>
+                    <div class="info-item">
+                        <i class="bi bi-calendar"></i>
+                        <span>{{ clip.created_at|datetime }}</span>
+                    </div>
                 </div>
                 <div class="clip-actions">
                     <a href="{{ clip.path }}" 
                        class="btn btn-clip" 
                        target="_blank">
-                        <i class="bi bi-play-fill me-1"></i>Play
+                        <i class="bi bi-play-fill"></i>
                     </a>
                     <button class="btn btn-clip individual-delete"
                             hx-delete="/clips/delete/{{ clip.id }}"
@@ -63,7 +73,7 @@
                             hx-swap="outerHTML"
                             hx-confirm="Are you sure you want to delete this clip?"
                             hx-indicator="#loading-{{ clip.id }}">
-                        <i class="bi bi-trash me-1"></i>Delete
+                        <i class="bi bi-trash"></i>
                         <div id="loading-{{ clip.id }}" 
                              class="htmx-indicator spinner-border spinner-border-sm"></div>
                     </button>
@@ -71,7 +81,7 @@
             </div>
         </div>
         {% endfor %}
-    </form>
+    </div>
 {% else %}
     <div class="text-center text-muted p-5">
         <i class="bi bi-camera-reels display-1"></i>
