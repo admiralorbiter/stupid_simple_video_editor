@@ -48,6 +48,9 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Clip preview before creation
 - ✅ Clip renaming
 - ✅ Clip search/filter
+- ✅ Multi-segment removal (remove ads/unwanted sections)
+- ✅ Preview segments before removal
+- ✅ Add/remove multiple segments
 
 ### UI/UX
 - ✅ Bootstrap styling
@@ -65,7 +68,7 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 
 ## Missing Features
 
-### Advanced Features
+### Advanced Features for Production
 - ❌ Transcoding options
 - ❌ Background task queue
 

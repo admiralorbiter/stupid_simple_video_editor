@@ -5,102 +5,123 @@ from pathlib import Path
 import subprocess
 from helper import *
 import time
+import json
+from werkzeug.utils import secure_filename
 
 def init_clip_routes(app):
     @app.route('/create-clip', methods=['POST'])
     def create_clip():
         """Create a new clip from a video"""
+        video_id = request.form.get('video_id')
+        clip_name = request.form.get('clip_name')
+        segments_str = request.form.get('segments', '[]')
+        
         try:
-            video_id = request.form.get('video_id')
-            start_time = request.form.get('start_time')
-            end_time = request.form.get('end_time')
-            clip_name = request.form.get('clip_name')
-            
-            if not all([video_id, start_time, end_time, clip_name]):
-                return """
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        Missing required fields
-                    </div>
-                """
+            segments = json.loads(segments_str)
+            if not segments:
+                return jsonify({
+                    'status': 'error',
+                    'message': 'No segments provided'
+                }), 400
+
+            # Get first and last times for the clip's overall start/end
+            first_segment = min(segments, key=lambda x: timeToSeconds(x['start']))
+            last_segment = max(segments, key=lambda x: timeToSeconds(x['end']))
             
             conn = get_db_connection()
-            video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
-                               (video_id,)).fetchone()
-            
-            if not video:
-                return """
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        Video not found
-                    </div>
-                """
-            
-            # Ensure output directories exist
-            ensure_thumbnail_dirs()
-            
-            # Generate clip
-            input_path = video['file_path']
-            # Format filename to use underscores instead of colons
-            safe_start = start_time.replace(':', '')
-            safe_end = end_time.replace(':', '')
-            output_filename = f"{clip_name}_{safe_start}-{safe_end}.mp4"
-            output_path = os.path.join(session.get('clips_folder', 'clips'), output_filename)
-            
-            # Ensure the output path uses forward slashes
-            output_path = output_path.replace('\\', '/')
-            
-            cmd = [
-                'ffmpeg', '-y',
-                '-ss', start_time,
-                '-i', input_path,
-                '-to', end_time,
-                '-c', 'copy',
-                output_path
-            ]
-            
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            
-            if result.returncode != 0:
-                return f"""
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle me-2"></i>
-                        Error creating clip: {result.stderr}
-                    </div>
-                """
-            
-            # Generate thumbnail at clip start time
-            thumbnail_filename = f"{clip_name}_{safe_start}.jpg"
-            thumbnail_path = f"static/thumbnails/clips/{thumbnail_filename}"
-            if not generate_thumbnail(output_path, thumbnail_path, start_time):
-                print(f"Failed to generate thumbnail for clip: {clip_name}")
-                thumbnail_path = None
-            
-            # Save to database
-            conn.execute('''
-                INSERT INTO clips (video_id, clip_name, start_time, end_time, clip_path, thumbnail_path)
-                VALUES (?, ?, ?, ?, ?, ?)
-            ''', (video_id, clip_name, start_time, end_time, output_path, thumbnail_path))
-            conn.commit()
-            
-            return """
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle me-2"></i>
-                    Clip created successfully
-                </div>
-            """
-            
-        except Exception as e:
-            print(f"Error creating clip: {str(e)}")
-            return f"""
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    Error creating clip: {str(e)}
-                </div>
-            """
-        finally:
-            if 'conn' in locals():
-                conn.close()
+            try:
+                # Get video info
+                video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
+                                   [video_id]).fetchone()
+                
+                if not video:
+                    return jsonify({'status': 'error', 'message': 'Video not found'}), 404
+
+                # Ensure CLIPS_FOLDER exists
+                if 'CLIPS_FOLDER' not in app.config:
+                    app.config['CLIPS_FOLDER'] = os.path.join(os.path.dirname(app.instance_path), 'clips')
+                
+                output_dir = os.path.join(app.config['CLIPS_FOLDER'], str(video_id))
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, f"{secure_filename(clip_name)}.mp4")
+
+                # Create FFmpeg filter complex
+                filter_complex = create_segment_filter(video['file_path'], segments)
+                
+                # Execute FFmpeg command
+                cmd = [
+                    'ffmpeg', '-i', video['file_path'],
+                    '-filter_complex', filter_complex,
+                    '-c:v', 'libx264', '-c:a', 'aac',
+                    '-y',
+                    output_path
+                ]
+                
+                print(f"Executing FFmpeg command: {' '.join(cmd)}")
+                result = subprocess.run(cmd, capture_output=True, text=True)
+
+                if result.returncode != 0:
+                    print(f"FFmpeg error: {result.stderr}")
+                    return jsonify({
+                        'status': 'error',
+                        'message': f'FFmpeg error: {result.stderr}'
+                    }), 500
+
+                # Save clip info to database - matching your schema
+                clip_id = conn.execute('''
+                    INSERT INTO clips (
+                        video_id,
+                        clip_name,
+                        start_time,
+                        end_time,
+                        clip_path,
+                        thumbnail_path,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
+                ''', [
+                    video_id,
+                    clip_name,
+                    first_segment['start'],
+                    last_segment['end'],
+                    output_path
+                ]).lastrowid
+
+                # Save individual segments
+                for segment in segments:
+                    conn.execute('''
+                        INSERT INTO clip_segments (
+                            clip_id,
+                            start_time,
+                            end_time,
+                            created_at
+                        ) VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ''', [clip_id, segment['start'], segment['end']])
+
+                conn.commit()
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Clip created successfully',
+                    'clip_id': clip_id
+                })
+
+            except Exception as e:
+                print(f"Error creating clip: {str(e)}")
+                if 'conn' in locals():
+                    conn.rollback()
+                return jsonify({
+                    'status': 'error',
+                    'message': str(e)
+                }), 500
+            finally:
+                if 'conn' in locals():
+                    conn.close()
+
+        except json.JSONDecodeError:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid segments data'
+            }), 400
+
     @app.route('/clips', methods=['GET'])
     @app.route('/clips/<int:video_id>', methods=['GET'])
     def get_clips(video_id=None):
@@ -494,3 +515,40 @@ def init_clip_routes(app):
         conn.close()
         
         return render_template('clips_list.html', clips=clips_data)
+
+def timeToSeconds(time_str):
+    """Convert time string (MM:SS) to seconds"""
+    try:
+        if ':' not in time_str:
+            return float(time_str)
+        minutes, seconds = map(float, time_str.split(':'))
+        return minutes * 60 + seconds
+    except ValueError as e:
+        print(f"Error converting time: {time_str}")
+        raise e
+
+def create_segment_filter(input_path, segments):
+    """Create FFmpeg filter complex for removing multiple segments"""
+    try:
+        # Sort segments by start time
+        segments = sorted(segments, key=lambda x: timeToSeconds(x['start']))
+        
+        # Create trim filters for keeping sections between removed segments
+        filters = []
+        last_end = 0
+        
+        for segment in segments:
+            start = timeToSeconds(segment['start'])
+            end = timeToSeconds(segment['end'])
+            
+            if start > last_end:
+                filters.append(f"between(t,{last_end},{start})")
+            last_end = end
+        
+        # Add final section after last segment
+        filters.append(f"gte(t,{last_end})")
+        
+        return f"select='{'+'.join(filters)}',setpts=N/FRAME_RATE/TB"
+    except Exception as e:
+        print(f"Error creating filter: {str(e)}")
+        raise e

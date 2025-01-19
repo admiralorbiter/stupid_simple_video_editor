@@ -146,6 +146,18 @@ def init_routes(app):
                     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
                 )
             ''')
+
+            # Create segments table
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS clip_segments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    clip_id INTEGER NOT NULL,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (clip_id) REFERENCES clips (id) ON DELETE CASCADE
+                )
+            ''')
             
             conn.commit()
         finally:
