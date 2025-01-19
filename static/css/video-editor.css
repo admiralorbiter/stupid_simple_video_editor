@@ -27,38 +27,69 @@
     position: absolute;
     top: 0;
     left: 0;
-    width: 100%;
+    right: 0;
     height: 100%;
+    pointer-events: none;
 }
 
 .timeline-segment {
     position: absolute;
     height: 100%;
-    background: rgba(40, 167, 69, 0.2);
-    border: 2px solid rgba(40, 167, 69, 0.5);
+    background-color: rgba(40, 167, 69, 0.5);
+    border: 2px solid rgba(40, 167, 69, 0.8);
+    border-radius: 4px;
     cursor: move;
     transition: background-color 0.2s;
 }
 
 .timeline-segment:hover {
-    background: rgba(40, 167, 69, 0.3);
+    background-color: rgba(40, 167, 69, 0.7);
 }
 
-.timeline-segment .handle {
+.timeline-segment.dragging {
+    opacity: 0.8;
+    z-index: 1000;
+}
+
+.handle {
     position: absolute;
+    top: 0;
     width: 12px;
     height: 100%;
-    cursor: col-resize;
-    background: rgba(220, 53, 69, 0.5);
-    transition: background-color 0.2s;
+    background-color: rgba(255, 255, 255, 0.8);
+    cursor: ew-resize;
+    border-radius: 2px;
 }
 
-.timeline-segment .handle:hover {
-    background: rgba(220, 53, 69, 0.8);
+.handle:hover {
+    background-color: #fff;
 }
 
-.timeline-segment .handle-left { left: 0; }
-.timeline-segment .handle-right { right: 0; }
+.handle-left {
+    left: -6px;
+}
+
+.handle-right {
+    right: -6px;
+}
+
+.segment-label {
+    position: absolute;
+    top: -24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    display: none;
+}
+
+.timeline-segment:hover .segment-label {
+    display: block;
+}
 
 .timeline-markers {
     position: absolute;
@@ -147,4 +178,8 @@
     background: rgba(40, 167, 69, 0.3);
     border: 2px solid rgba(40, 167, 69, 0.5);
     pointer-events: none;
+}
+
+.timeline-segment, .handle {
+    pointer-events: auto;
 } 

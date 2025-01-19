@@ -22,12 +22,12 @@
    - Single-pass processing
    - Proper timestamp handling
 
-### Pending Features ❌
-1. **Enhanced Timeline Visualization**
+4. **Enhanced Timeline Visualization**
    - Visual timeline representation of segments
    - Drag-and-drop segment adjustment
    - Color-coded segment markers
 
+### Pending Features ❌
 2. **Advanced Preview**
    - Real-time preview of final clip
    - Transition preview between segments
@@ -58,7 +58,6 @@
    - Segment templates/presets
 
 ## Next Steps
-1. Implement timeline visualization
 2. Add progress indicators for processing
 3. Improve segment validation
 4. Add keyboard shortcuts

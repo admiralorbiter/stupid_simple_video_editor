@@ -67,8 +67,20 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Interactive folder tree
 - ✅ Modal dialogs for organization
 - ✅ Enhanced Timeline Visualization
+- ✅ Drag-and-drop segment adjustment
+- ✅ Color-coded segment markers
+
+
+## Bugs
+
+- [Bug] Clip playback not working
 
 ## Missing Features
+
+### UI / UX
+- ❌ Progress bar when scanning videos
+- ❌ Progress bar when creating clips
+- ❌ Waveform visualization
 
 ### Advanced Features for Production
 - ❌ Transcoding options

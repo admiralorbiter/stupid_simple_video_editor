@@ -24,6 +24,8 @@ class VideoEditor {
                 this.currentSegment = null;
                 this.isSelecting = false;
                 this.selectionStart = null;
+                this.draggedHandle = null;
+                this.draggedSegment = null;
                 
                 this.initializeEventListeners();
                 this.initializeTimeMarkers();
@@ -102,6 +104,47 @@ class VideoEditor {
                     const endX = startX + width;
                     this.addSegmentFromSelection(startX, endX);
                 }
+            }
+        });
+
+        // Add drag handlers for segments
+        document.addEventListener('mousedown', (e) => {
+            const handle = e.target.closest('.handle');
+            const segment = e.target.closest('.timeline-segment');
+            
+            if (handle) {
+                this.draggedHandle = {
+                    element: handle,
+                    index: parseInt(handle.dataset.index),
+                    type: handle.dataset.type
+                };
+                e.preventDefault();
+            } else if (segment && !e.target.closest('.handle')) {
+                this.draggedSegment = {
+                    element: segment,
+                    index: parseInt(segment.dataset.index),
+                    startX: e.clientX
+                };
+                segment.classList.add('dragging');
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (this.draggedHandle) {
+                this.handleDrag(e);
+            } else if (this.draggedSegment) {
+                this.handleSegmentDrag(e);
+            }
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (this.draggedHandle) {
+                this.draggedHandle = null;
+            }
+            if (this.draggedSegment) {
+                this.draggedSegment.element.classList.remove('dragging');
+                this.draggedSegment = null;
             }
         });
     }
@@ -243,11 +286,14 @@ class VideoEditor {
             
             const segmentEl = document.createElement('div');
             segmentEl.className = 'timeline-segment';
+            segmentEl.dataset.index = index;
             segmentEl.style.left = `${startPercent}%`;
             segmentEl.style.width = `${width}%`;
+            segmentEl.style.backgroundColor = this.getSegmentColor(index);
             
             segmentEl.innerHTML = `
                 <div class="handle handle-left" data-index="${index}" data-type="start"></div>
+                <div class="segment-label">${segment.start} - ${segment.end}</div>
                 <div class="handle handle-right" data-index="${index}" data-type="end"></div>
             `;
             
@@ -404,6 +450,69 @@ class VideoEditor {
         if (overlay) {
             overlay.remove();
         }
+    }
+
+    handleDrag(e) {
+        const timelineTrack = document.querySelector('.timeline-track');
+        const rect = timelineTrack.getBoundingClientRect();
+        const position = (e.clientX - rect.left) / rect.width;
+        const newTime = Math.max(0, Math.min(this.videoPlayer.duration, position * this.videoPlayer.duration));
+        
+        const segment = this.segments[this.draggedHandle.index];
+        if (this.draggedHandle.type === 'start') {
+            if (newTime < segment.endSeconds) {
+                segment.startSeconds = newTime;
+                segment.start = this.formatTime(newTime);
+            }
+        } else {
+            if (newTime > segment.startSeconds) {
+                segment.endSeconds = newTime;
+                segment.end = this.formatTime(newTime);
+            }
+        }
+        
+        this.updateSegmentsList();
+        this.updateSegmentsVisualization();
+    }
+
+    handleSegmentDrag(e) {
+        const timelineTrack = document.querySelector('.timeline-track');
+        const rect = timelineTrack.getBoundingClientRect();
+        const deltaX = e.clientX - this.draggedSegment.startX;
+        const deltaTime = (deltaX / rect.width) * this.videoPlayer.duration;
+        
+        const segment = this.segments[this.draggedSegment.index];
+        const duration = segment.endSeconds - segment.startSeconds;
+        
+        let newStart = segment.startSeconds + deltaTime;
+        let newEnd = segment.endSeconds + deltaTime;
+        
+        // Ensure segment stays within video bounds
+        if (newStart < 0) {
+            newStart = 0;
+            newEnd = duration;
+        } else if (newEnd > this.videoPlayer.duration) {
+            newEnd = this.videoPlayer.duration;
+            newStart = newEnd - duration;
+        }
+        
+        segment.startSeconds = newStart;
+        segment.endSeconds = newEnd;
+        segment.start = this.formatTime(newStart);
+        segment.end = this.formatTime(newEnd);
+        
+        this.draggedSegment.startX = e.clientX;
+        this.updateSegmentsList();
+        this.updateSegmentsVisualization();
+    }
+
+    getSegmentColor(index) {
+        // Generate distinct colors for segments
+        const colors = [
+            '#28a745', '#17a2b8', '#ffc107', '#dc3545', 
+            '#6610f2', '#fd7e14', '#20c997', '#e83e8c'
+        ];
+        return colors[index % colors.length];
     }
 }
 
