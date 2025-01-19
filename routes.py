@@ -95,6 +95,7 @@ def init_routes(app):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     name TEXT NOT NULL,
                     parent_id INTEGER,
+                    is_open BOOLEAN DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (parent_id) REFERENCES folders(id)
                 )

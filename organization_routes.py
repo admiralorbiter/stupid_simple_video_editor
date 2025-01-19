@@ -20,7 +20,8 @@ def init_organization_routes(app):
                             SELECT 1 
                             FROM folders f2 
                             WHERE f2.parent_id = folders.id
-                        ) as has_children
+                        ) as has_children,
+                        is_open
                     FROM folders
                     WHERE parent_id IS NULL
                     UNION ALL
@@ -33,17 +34,12 @@ def init_organization_routes(app):
                             SELECT 1 
                             FROM folders f2 
                             WHERE f2.parent_id = f.id
-                        ) as has_children
+                        ) as has_children,
+                        f.is_open
                     FROM folders f
                     JOIN folder_tree ft ON f.parent_id = ft.id
                 )
-                SELECT 
-                    id, 
-                    name, 
-                    parent_id, 
-                    level,
-                    has_children,
-                    0 as is_open  -- You can store open state in session if needed
+                SELECT *
                 FROM folder_tree
                 ORDER BY level, name
             ''').fetchall()]
@@ -208,8 +204,20 @@ def init_organization_routes(app):
     @app.route('/api/folders/<int:folder_id>/toggle', methods=['POST'])
     def toggle_folder(folder_id):
         """Toggle folder open/closed state"""
+        conn = get_db_connection()
         try:
-            # You might want to store this state in the database or session
-            return jsonify({'status': 'success'})
+            # Get current state
+            cursor = conn.execute('SELECT is_open FROM folders WHERE id = ?', (folder_id,))
+            current_state = cursor.fetchone()['is_open']
+            
+            # Toggle state
+            new_state = not current_state
+            conn.execute('UPDATE folders SET is_open = ? WHERE id = ?', 
+                        (new_state, folder_id))
+            conn.commit()
+            
+            return jsonify({'status': 'success', 'is_open': new_state})
         except Exception as e:
-            return jsonify({'status': 'error', 'message': str(e)}), 500 
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+        finally:
+            conn.close() 

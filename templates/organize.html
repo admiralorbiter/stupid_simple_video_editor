@@ -14,13 +14,12 @@
                 <div class="card-body">
                     <div id="folder-tree">
                         {% for folder in folders %}
-                            <div class="folder-item" 
+                            <div class="folder-item {% if folder.is_open %}open{% endif %}" 
                                  style="margin-left: {{ folder.level * 20 }}px"
                                  data-folder-id="{{ folder.id }}"
                                  ondragover="onFolderDragOver(event)"
-                                 ondrop="onFolderDrop(event)"
-                                 onclick="toggleFolder(event, {{ folder.id }})">
-                                <div class="d-flex align-items-center">
+                                 ondrop="onFolderDrop(event)">
+                                <div class="d-flex align-items-center" onclick="toggleFolder(event, {{ folder.id }})">
                                     {% if folder.has_children %}
                                         <i class="bi bi-caret-right-fill me-1 folder-toggle"></i>
                                     {% else %}
@@ -31,6 +30,18 @@
                                     <div class="folder-actions ms-auto">
                                         <i class="bi bi-three-dots-vertical" onclick="showFolderMenu(event, {{ folder.id }})"></i>
                                     </div>
+                                </div>
+                                <div class="folder-videos" style="display: {% if folder.is_open %}block{% else %}none{% endif %}">
+                                    {% for video in videos %}
+                                        {% if video.folders and folder.name in video.folders.split(',') %}
+                                            <div class="video-item ms-4 mt-2" data-video-id="{{ video.id }}">
+                                                <div class="d-flex align-items-center">
+                                                    <i class="bi bi-play-circle me-2"></i>
+                                                    <span>{{ video.title }}</span>
+                                                </div>
+                                            </div>
+                                        {% endif %}
+                                    {% endfor %}
                                 </div>
                             </div>
                         {% endfor %}
@@ -170,9 +181,10 @@
 
 .folder-toggle {
     transition: transform 0.2s ease;
+    cursor: pointer;
 }
 
-.folder-item.open .folder-toggle {
+.folder-item.open > div > .folder-toggle {
     transform: rotate(90deg);
 }
 
@@ -245,6 +257,29 @@
 
 .folder-select-item.selected {
     background-color: var(--bs-primary-bg-subtle);
+}
+
+/* Add these styles */
+.folder-item .folder-item {
+    display: none;
+}
+
+.folder-item.open > .folder-item {
+    display: block;
+}
+
+.folder-videos {
+    transition: all 0.3s ease;
+}
+
+.folder-item .video-item {
+    font-size: 0.9em;
+    padding: 0.3rem;
+    border-radius: 4px;
+}
+
+.folder-item .video-item:hover {
+    background-color: var(--bs-light);
 }
 </style>
 
@@ -443,14 +478,60 @@ document.querySelectorAll('.tag-item').forEach(tag => {
 
 function toggleFolder(event, folderId) {
     event.preventDefault();
-    const folderItem = event.currentTarget;
+    event.stopPropagation();
+    
+    const folderItem = event.currentTarget.closest('.folder-item');
+    const caretIcon = folderItem.querySelector('.folder-toggle');
+    const folderIcon = folderItem.querySelector('.bi-folder, .bi-folder-open');
+    const folderVideos = folderItem.querySelector('.folder-videos');
+    
+    // Toggle folder state
     folderItem.classList.toggle('open');
+    
+    // Toggle folder icon
+    if (folderIcon) {
+        folderIcon.classList.toggle('bi-folder');
+        folderIcon.classList.toggle('bi-folder-open');
+    }
+    
+    // Toggle videos visibility
+    if (folderVideos) {
+        folderVideos.style.display = folderItem.classList.contains('open') ? 'block' : 'none';
+    }
     
     // Update folder state in database
     fetch('/api/folders/' + folderId + '/toggle', {
-        method: 'POST'
-    }).catch(error => {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status !== 'success') {
+            console.error('Failed to toggle folder:', data.message);
+            // Revert all UI changes if the server update failed
+            folderItem.classList.toggle('open');
+            if (folderIcon) {
+                folderIcon.classList.toggle('bi-folder');
+                folderIcon.classList.toggle('bi-folder-open');
+            }
+            if (folderVideos) {
+                folderVideos.style.display = folderItem.classList.contains('open') ? 'block' : 'none';
+            }
+        }
+    })
+    .catch(error => {
         console.error('Error toggling folder:', error);
+        // Revert all UI changes on error
+        folderItem.classList.toggle('open');
+        if (folderIcon) {
+            folderIcon.classList.toggle('bi-folder');
+            folderIcon.classList.toggle('bi-folder-open');
+        }
+        if (folderVideos) {
+            folderVideos.style.display = folderItem.classList.contains('open') ? 'block' : 'none';
+        }
     });
 }
 
