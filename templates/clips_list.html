@@ -19,6 +19,17 @@
     <form id="clips-form">
         {% for clip in clips %}
         <div class="clip-card" id="clip-{{ clip.id }}">
+            <div class="clip-thumbnail">
+                {% if clip.thumbnail_path %}
+                    <img src="{{ url_for('static', filename=clip.thumbnail_path.replace('static/', '')) }}" 
+                         alt="{{ clip.name }}" 
+                         class="clip-thumbnail-img">
+                {% else %}
+                    <div class="placeholder-thumbnail">
+                        <i class="bi bi-camera-video"></i>
+                    </div>
+                {% endif %}
+            </div>
             <div class="clip-header d-flex align-items-center">
                 <input type="checkbox" 
                        name="clip-checkbox" 

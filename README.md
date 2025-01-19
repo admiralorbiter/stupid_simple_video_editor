@@ -17,12 +17,19 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Custom output folder selection
 - ✅ FFmpeg integration for clip creation
 - ✅ Direct video serving
+- ✅ List of created clips
+- ✅ Clip management (delete individual/batch)
+- ✅ Clips organized by source video
+- ✅ Clip thumbnails
+- ❌ Clip undo
 
 ### UI/UX
 - ✅ Bootstrap styling
 - ✅ HTMX for dynamic updates
 - ✅ Success/error messages
 - ✅ Responsive layout
+- ✅ Batch selection interface
+- ✅ Confirmation dialogs
 
 ## Missing Features
 
@@ -32,17 +39,16 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ❌ Folder/tag organization for videos
 
 ### Clipping
-- ❌ List of created clips
 - ❌ Clip preview before creation
-- ❌ Clip management (rename/delete)
+- ❌ Clip renaming
 - ❌ Batch clip creation
+- ❌ Undo batch clip deletion
 
 ### Advanced Features
 - ❌ Transcoding options
 - ❌ Background task queue
 - ❌ Search/filter functionality
 - ❌ User authentication
-- ❌ Clip thumbnails
 
 ## Setup
 
@@ -68,6 +74,10 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 3. Select a video from the library
 4. Use the video player to find start/end points
 5. Enter a clip name and create your clip
+6. Manage your clips in the Clips Library:
+   - View all clips or filter by source video
+   - Delete individual clips or select multiple for batch deletion
+   - View clip thumbnails for easy identification
 
 ## Tech Stack
 

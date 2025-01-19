@@ -3,12 +3,27 @@
     <div class="video-list-item" 
          data-video-id="{{ video.id }}"
          onclick="loadVideoEditor({{ video.id }})">
-        <div class="fw-bold">{{ video.title }}</div>
-        <small class="text-muted">
-            {% if video.size_mb %}Size: {{ video.size_mb }}MB{% endif %}
-            {% if video.duration %}<br>Duration: {{ video.duration }}{% endif %}
-            {% if video.created_at %}<br>Added: {{ video.created_at|datetime }}{% endif %}
-        </small>
+        <div class="video-item-content">
+            <div class="video-thumbnail">
+                {% if video.thumbnail_path %}
+                    <img src="{{ url_for('static', filename=video.thumbnail_path.replace('static/', '')) }}" 
+                         alt="{{ video.title }}" 
+                         class="img-fluid">
+                {% else %}
+                    <div class="placeholder-thumbnail">
+                        <i class="bi bi-camera-video"></i>
+                    </div>
+                {% endif %}
+            </div>
+            <div class="video-info">
+                <div class="fw-bold">{{ video.title }}</div>
+                <small class="text-muted">
+                    {% if video.size_mb %}Size: {{ video.size_mb }}MB{% endif %}
+                    {% if video.duration %}<br>Duration: {{ video.duration }}{% endif %}
+                    {% if video.created_at %}<br>Added: {{ video.created_at|datetime }}{% endif %}
+                </small>
+            </div>
+        </div>
     </div>
     {% endfor %}
 {% else %}

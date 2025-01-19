@@ -64,6 +64,7 @@ def init_routes(app):
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     title TEXT NOT NULL,
                     file_path TEXT UNIQUE NOT NULL,
+                    thumbnail_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
@@ -77,6 +78,7 @@ def init_routes(app):
                     start_time TEXT NOT NULL,
                     end_time TEXT NOT NULL,
                     clip_path TEXT NOT NULL,
+                    thumbnail_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (video_id) REFERENCES videos (id)
                 )
@@ -91,6 +93,7 @@ def init_routes(app):
                     start_time TEXT NOT NULL,
                     end_time TEXT NOT NULL,
                     clip_path TEXT NOT NULL,
+                    thumbnail_path TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (video_id) REFERENCES videos (id)
                 )
@@ -322,27 +325,21 @@ def init_routes(app):
 
     @app.route('/create-clip', methods=['POST'])
     def create_clip():
-        """Create a new clip from the video"""
-        video_id = request.form.get('video_id')
-        clip_name = request.form.get('clip_name')
-        start_time = request.form.get('start_time')
-        end_time = request.form.get('end_time')
-        
-        if not all([video_id, clip_name, start_time, end_time]):
-            return """
-                <div class="alert alert-danger">
-                    All fields are required.
-                </div>
-            """
-        
-        print("Form data received:", {
-            'video_id': video_id,
-            'clip_name': clip_name,
-            'start_time': start_time,
-            'end_time': end_time
-        })
-        
+        """Create a new clip from a video"""
         try:
+            video_id = request.form.get('video_id')
+            start_time = request.form.get('start_time')
+            end_time = request.form.get('end_time')
+            clip_name = request.form.get('clip_name')
+            
+            if not all([video_id, start_time, end_time, clip_name]):
+                return """
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Missing required fields
+                    </div>
+                """
+            
             conn = get_db_connection()
             video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
                                (video_id,)).fetchone()
@@ -350,62 +347,67 @@ def init_routes(app):
             if not video:
                 return """
                     <div class="alert alert-danger">
-                        Video not found.
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Video not found
                     </div>
                 """
             
-            # Create clips directory if it doesn't exist
-            clips_dir = os.path.join('static', 'clips')
-            os.makedirs(clips_dir, exist_ok=True)
+            # Ensure output directories exist
+            ensure_thumbnail_dirs()
             
-            # Generate unique filename for the clip
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            safe_name = "".join(c for c in clip_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
-            output_filename = f'{safe_name}_{timestamp}.mp4'
-            output_path = os.path.join(clips_dir, output_filename)
+            # Generate clip
+            input_path = video['file_path']
+            # Format filename to use underscores instead of colons
+            safe_start = start_time.replace(':', '')
+            safe_end = end_time.replace(':', '')
+            output_filename = f"{clip_name}_{safe_start}-{safe_end}.mp4"
+            output_path = os.path.join(session.get('clips_folder', 'clips'), output_filename)
             
-            # Build FFmpeg command
-            command = [
-                'ffmpeg',
+            # Ensure the output path uses forward slashes
+            output_path = output_path.replace('\\', '/')
+            
+            cmd = [
+                'ffmpeg', '-y',
                 '-ss', start_time,
+                '-i', input_path,
                 '-to', end_time,
-                '-i', video['file_path'],
                 '-c', 'copy',
-                '-y',  # Overwrite output file if it exists
                 output_path
             ]
             
-            # Execute FFmpeg command
-            result = subprocess.run(command, 
-                                  capture_output=True, 
-                                  text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True)
             
             if result.returncode != 0:
-                raise Exception(f"FFmpeg error: {result.stderr}")
+                return f"""
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Error creating clip: {result.stderr}
+                    </div>
+                """
             
-            # Store clip information in database
+            # Generate thumbnail at clip start time
+            thumbnail_filename = f"{clip_name}_{safe_start}.jpg"
+            thumbnail_path = f"static/thumbnails/clips/{thumbnail_filename}"
+            if not generate_thumbnail(output_path, thumbnail_path, start_time):
+                print(f"Failed to generate thumbnail for clip: {clip_name}")
+                thumbnail_path = None
+            
+            # Save to database
             conn.execute('''
-                INSERT INTO clips (video_id, clip_name, start_time, end_time, clip_path)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (video_id, clip_name, start_time, end_time, output_path))
+                INSERT INTO clips (video_id, clip_name, start_time, end_time, clip_path, thumbnail_path)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (video_id, clip_name, start_time, end_time, output_path, thumbnail_path))
             conn.commit()
             
-            return f"""
+            return """
                 <div class="alert alert-success">
                     <i class="bi bi-check-circle me-2"></i>
-                    Clip "{clip_name}" created successfully!
-                    <div class="mt-2">
-                        <a href="/static/clips/{output_filename}" 
-                           class="btn btn-sm btn-primary" 
-                           target="_blank">
-                            <i class="bi bi-play-fill me-1"></i>Play Clip
-                        </a>
-                    </div>
+                    Clip created successfully
                 </div>
             """
             
         except Exception as e:
-            print(f"Error creating clip: {str(e)}")  # Add logging
+            print(f"Error creating clip: {str(e)}")
             return f"""
                 <div class="alert alert-danger">
                     <i class="bi bi-exclamation-triangle me-2"></i>
@@ -413,7 +415,8 @@ def init_routes(app):
                 </div>
             """
         finally:
-            conn.close() 
+            if 'conn' in locals():
+                conn.close()
 
     @app.route('/clips', methods=['GET'])
     @app.route('/clips/<int:video_id>', methods=['GET'])
@@ -423,7 +426,6 @@ def init_routes(app):
             conn = get_db_connection()
             
             if video_id:
-                # Get clips for specific video with video title
                 clips = conn.execute('''
                     SELECT 
                         c.id,
@@ -432,6 +434,7 @@ def init_routes(app):
                         c.end_time,
                         c.clip_path,
                         c.created_at,
+                        c.thumbnail_path,
                         v.title as video_title
                     FROM clips c
                     JOIN videos v ON c.video_id = v.id
@@ -439,7 +442,6 @@ def init_routes(app):
                     ORDER BY c.created_at DESC
                 ''', (video_id,)).fetchall()
             else:
-                # Get all clips with their video titles
                 clips = conn.execute('''
                     SELECT 
                         c.id,
@@ -448,13 +450,13 @@ def init_routes(app):
                         c.end_time,
                         c.clip_path,
                         c.created_at,
+                        c.thumbnail_path,
                         v.title as video_title
                     FROM clips c
                     JOIN videos v ON c.video_id = v.id
                     ORDER BY c.created_at DESC
                 ''').fetchall()
             
-            # Convert to list of dictionaries for easier template handling
             clips_data = [{
                 'id': clip[0],
                 'name': clip[1],
@@ -462,26 +464,25 @@ def init_routes(app):
                 'end_time': clip[3],
                 'path': clip[4],
                 'created_at': clip[5],
-                'video_title': clip[6]
+                'thumbnail_path': clip[6],
+                'video_title': clip[7]
             } for clip in clips]
             
-            # Return different templates based on request type
             if request.headers.get('HX-Request'):
-                # Return partial template for HTMX requests
                 return render_template('clips_list.html', clips=clips_data)
             else:
-                # Return full page for direct visits
                 return render_template('clips.html', clips=clips_data)
             
         except Exception as e:
             print(f"Error fetching clips: {str(e)}")
-            return """
+            return f"""
                 <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
                     Error fetching clips: {str(e)}
                 </div>
             """
         finally:
-            conn.close() 
+            conn.close()
 
     @app.route('/clips/delete/<int:clip_id>', methods=['DELETE'])
     def delete_clip(clip_id):
@@ -686,6 +687,78 @@ def init_routes(app):
                 </div>
             """ 
 
+    @app.route('/videos/import', methods=['POST'])
+    def import_videos():
+        """Import videos from selected folder"""
+        try:
+            folder_path = request.form.get('folder_path')
+            if not folder_path:
+                return """
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        No folder path provided
+                    </div>
+                """
+            
+            # Ensure thumbnail directories exist
+            ensure_thumbnail_dirs()
+            
+            conn = get_db_connection()
+            imported_count = 0
+            skipped_count = 0
+            
+            for file in Path(folder_path).glob('**/*'):
+                if file.suffix.lower() in ['.mp4', '.mkv', '.avi', '.mov']:
+                    try:
+                        # Check if video already exists
+                        existing = conn.execute('SELECT id FROM videos WHERE file_path = ?', 
+                                             (str(file),)).fetchone()
+                        if existing:
+                            skipped_count += 1
+                            continue
+                        
+                        # Generate thumbnail
+                        thumbnail_path = f'static/thumbnails/videos/{file.stem}.jpg'
+                        if generate_thumbnail(str(file), thumbnail_path):
+                            print(f"Generated thumbnail: {thumbnail_path}")
+                        else:
+                            print(f"Failed to generate thumbnail for: {file}")
+                            thumbnail_path = None
+                        
+                        # Insert video with thumbnail
+                        conn.execute('''
+                            INSERT INTO videos (title, file_path, thumbnail_path)
+                            VALUES (?, ?, ?)
+                        ''', (file.stem, str(file), thumbnail_path))
+                        
+                        imported_count += 1
+                        
+                    except Exception as e:
+                        print(f"Error processing {file}: {str(e)}")
+                        continue
+            
+            conn.commit()
+            
+            return f"""
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle me-2"></i>
+                    Imported {imported_count} videos
+                    {f'(skipped {skipped_count} existing)' if skipped_count else ''}
+                </div>
+            """
+            
+        except Exception as e:
+            print(f"Error importing videos: {str(e)}")
+            return f"""
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    Error importing videos: {str(e)}
+                </div>
+            """
+        finally:
+            if 'conn' in locals():
+                conn.close()
+
 def get_clips_data():
     """Helper function to get formatted clips data"""
     conn = get_db_connection()
@@ -698,6 +771,7 @@ def get_clips_data():
                 c.end_time,
                 c.clip_path,
                 c.created_at,
+                c.thumbnail_path,
                 v.title as video_title
             FROM clips c
             JOIN videos v ON c.video_id = v.id
@@ -711,7 +785,34 @@ def get_clips_data():
             'end_time': clip[3],
             'path': clip[4],
             'created_at': clip[5],
-            'video_title': clip[6]
+            'thumbnail_path': clip[6],
+            'video_title': clip[7]
         } for clip in clips]
     finally:
         conn.close() 
+
+def generate_thumbnail(video_path, output_path, timestamp="00:00:05"):
+    """Generate a thumbnail for a video at the specified timestamp"""
+    try:
+        cmd = [
+            'ffmpeg',
+            '-ss', timestamp,
+            '-i', video_path,
+            '-vframes', '1',
+            '-q:v', '2',
+            '-y',  # Overwrite output file if it exists
+            output_path
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            print(f"Error generating thumbnail: {result.stderr}")
+            return None
+        return output_path
+    except Exception as e:
+        print(f"Error generating thumbnail: {str(e)}")
+        return None 
+
+def ensure_thumbnail_dirs():
+    """Ensure thumbnail directories exist"""
+    Path('static/thumbnails/videos').mkdir(parents=True, exist_ok=True)
+    Path('static/thumbnails/clips').mkdir(parents=True, exist_ok=True) 
