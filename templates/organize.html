@@ -66,9 +66,21 @@
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">Tags</h5>
-                    <button class="btn btn-primary" onclick="createTag()">
-                        <i class="bi bi-plus-lg"></i>
-                    </button>
+                    <div class="d-flex gap-2">
+                        <div class="input-group">
+                            <input type="text" 
+                                   class="form-control form-control-sm" 
+                                   id="tagSearch" 
+                                   placeholder="Search tags..."
+                                   oninput="filterTags(this.value)">
+                            <button class="btn btn-outline-secondary btn-sm" type="button" onclick="clearTagSearch()">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                        <button class="btn btn-primary btn-sm" onclick="createTag()">
+                            <i class="bi bi-plus-lg"></i>
+                        </button>
+                    </div>
                 </div>
                 <div class="card-body">
                     <div id="tag-list">
@@ -310,6 +322,27 @@
 /* Update existing folder styles */
 .folder-item {
     transition: all 0.3s ease;
+}
+
+.highlight {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+.tag-item {
+    transition: all 0.3s ease;
+}
+
+#tag-list {
+    min-height: 50px; /* Prevents layout shift when filtering */
+}
+
+/* Update existing tag styles */
+.tag-item .badge {
+    transition: all 0.3s ease;
+    white-space: normal;
+    text-align: left;
 }
 </style>
 
@@ -704,6 +737,35 @@ function clearFolderSearch() {
             folder.classList.remove('open');
         }
     });
+}
+
+function filterTags(searchTerm) {
+    const tagItems = document.querySelectorAll('.tag-item');
+    const normalizedSearch = searchTerm.toLowerCase().trim();
+    
+    tagItems.forEach(tag => {
+        const tagName = tag.dataset.tagName.toLowerCase();
+        const matches = tagName.includes(normalizedSearch);
+        tag.style.display = matches ? '' : 'none';
+        
+        // Add highlight effect for matching tags
+        const badge = tag.querySelector('.badge');
+        if (matches && normalizedSearch) {
+            const html = tagName.replace(
+                new RegExp(normalizedSearch, 'gi'),
+                match => `<span class="highlight">${match}</span>`
+            );
+            badge.innerHTML = html + ` (${tag.querySelector('.badge').textContent.split('(')[1]}`;
+        } else {
+            badge.innerHTML = tag.dataset.tagName + ` (${tag.querySelector('.badge').textContent.split('(')[1]}`;
+        }
+    });
+}
+
+function clearTagSearch() {
+    const searchInput = document.getElementById('tagSearch');
+    searchInput.value = '';
+    filterTags('');
 }
 </script>
 {% endblock %}

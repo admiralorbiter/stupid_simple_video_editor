@@ -28,6 +28,7 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Video preview in folder tree
 - ✅ Smooth folder transitions
 - ✅ Folder search/filter
+- ✅ Tag search/filter
 
 ### Clipping
 - ✅ Set clip start/end times
@@ -62,7 +63,6 @@ A stupid simple video clipping tool built with Flask, HTMX, and FFmpeg.
 ### Organization
 - ❌ Folder reordering
 - ❌ Tag categories
-- ❌ Tag search/filter
 - ❌ Bulk tag management
 
 ### Clipping

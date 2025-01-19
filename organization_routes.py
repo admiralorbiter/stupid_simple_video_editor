@@ -1,6 +1,33 @@
 from flask import render_template, jsonify, request
 from helper import get_db_connection
 import json
+import random
+import colorsys
+
+def generate_distinct_color(existing_colors):
+    """Generate a distinct color that's visually different from existing ones"""
+    if not existing_colors:
+        # Start with a vibrant color if no existing colors
+        return '#2196F3'  # Material Blue
+    
+    # Convert hex colors to HSV for better control
+    existing_hsv = [colorsys.rgb_to_hsv(*[int(c[i:i+2], 16)/255 for i in (1,3,5)]) 
+                   for c in existing_colors]
+    
+    # Try to find a distinct hue
+    best_hue = 0
+    max_min_diff = 0
+    
+    for i in range(30):  # Try 30 different hues
+        hue = i/30
+        min_diff = min(abs(hue - h[0]) % 1.0 for h in existing_hsv)
+        if min_diff > max_min_diff:
+            max_min_diff = min_diff
+            best_hue = hue
+    
+    # Convert back to RGB with good saturation and value
+    rgb = colorsys.hsv_to_rgb(best_hue, 0.7, 0.95)
+    return '#{:02x}{:02x}{:02x}'.format(int(rgb[0]*255), int(rgb[1]*255), int(rgb[2]*255))
 
 def init_organization_routes(app):
     @app.route('/organize')
@@ -136,16 +163,24 @@ def init_organization_routes(app):
 
     @app.route('/api/tags', methods=['POST'])
     def create_tag():
-        """Create a new tag"""
+        """Create a new tag with a distinct color"""
         data = request.json
         name = data.get('name')
-        color = data.get('color', '#6c757d')
+        color = data.get('color')
         
         if not name:
             return jsonify({'status': 'error', 'message': 'Tag name is required'}), 400
             
         conn = get_db_connection()
         try:
+            # Get existing tag colors
+            existing_colors = [row['color'] for row in conn.execute(
+                'SELECT color FROM tags').fetchall()]
+            
+            # Generate a distinct color if none provided
+            if not color:
+                color = generate_distinct_color(existing_colors)
+            
             cursor = conn.execute('''
                 INSERT INTO tags (name, color)
                 VALUES (?, ?)
