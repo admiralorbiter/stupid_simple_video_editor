@@ -1,6 +1,6 @@
 # Illcutyou
 
-A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
+A stupid simplevideo clipping tool built with Flask, HTMX, and FFmpeg.
 
 ## Current Features
 
@@ -25,6 +25,7 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ✅ Clip thumbnails
 - ✅ Clip undo (individual deletes)
 - ❌ Undo batch deletion
+- ✅ Clip preview before creation
 
 ### UI/UX
 - ✅ Bootstrap styling
@@ -44,7 +45,6 @@ A lightweight video clipping tool built with Flask, HTMX, and FFmpeg.
 - ❌ Folder/tag organization for videos
 
 ### Clipping
-- ❌ Clip preview before creation
 - ❌ Clip renaming
 - ❌ Batch clip creation
 - ❌ Undo batch clip deletion
