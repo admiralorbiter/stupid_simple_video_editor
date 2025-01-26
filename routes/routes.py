@@ -1,7 +1,7 @@
 from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file, make_response
 from flask_login import login_required, login_user, logout_user
 from forms import LoginForm
-from models.models import User, db
+from models.models import User, db, Video, Clip, Folder, Tag, TagCategory, ClipSegment
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 from pathlib import Path
@@ -46,155 +46,24 @@ def init_routes(app):
 
     # Initialize database tables
     with app.app_context():
-        conn = get_db_connection()
-        try:
-            # Create videos table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS videos (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    title TEXT NOT NULL,
-                    file_path TEXT UNIQUE NOT NULL,
-                    thumbnail_path TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-            
-            # Create clips table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS clips (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    video_id INTEGER NOT NULL,
-                    clip_name TEXT NOT NULL,
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
-                    clip_path TEXT NOT NULL,
-                    thumbnail_path TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (video_id) REFERENCES videos (id)
-                )
-            ''')
-            
-            # Create clips_backup table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS clips_backup (
-                    id INTEGER PRIMARY KEY,
-                    video_id INTEGER NOT NULL,
-                    clip_name TEXT NOT NULL,
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
-                    clip_path TEXT NOT NULL,
-                    thumbnail_path TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (video_id) REFERENCES videos (id)
-                )
-            ''')
-
-            # Create folders table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS folders (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    parent_id INTEGER,
-                    is_open BOOLEAN DEFAULT 0,
-                    position INTEGER DEFAULT 0,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (parent_id) REFERENCES folders(id)
-                )
-            ''')
-
-            # Create tag_categories table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS tag_categories (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            ''')
-
-            # Update tags table to include category_id
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS tags (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL UNIQUE,
-                    color TEXT DEFAULT '#6c757d',
-                    category_id INTEGER,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (category_id) REFERENCES tag_categories(id) ON DELETE SET NULL
-                )
-            ''')
-
-            # Create video_folders junction table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS video_folders (
-                    video_id INTEGER,
-                    folder_id INTEGER,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (video_id, folder_id),
-                    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
-                    FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE
-                )
-            ''')
-
-            # Create video_tags junction table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS video_tags (
-                    video_id INTEGER,
-                    tag_id INTEGER,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (video_id, tag_id),
-                    FOREIGN KEY (video_id) REFERENCES videos(id) ON DELETE CASCADE,
-                    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-                )
-            ''')
-
-            # Create segments table
-            conn.execute('''
-                CREATE TABLE IF NOT EXISTS clip_segments (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    clip_id INTEGER NOT NULL,
-                    start_time TEXT NOT NULL,
-                    end_time TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (clip_id) REFERENCES clips (id) ON DELETE CASCADE
-                )
-            ''')
-            
-            conn.commit()
-        finally:
-            conn.close()
+        db.create_all()
 
     @app.route('/')
     def index():
         """Render the main page with video library"""
-        conn = get_db_connection()
-        try:
-            # Get basic video info first
-            videos = conn.execute('''
-                SELECT 
-                    id,
-                    title,
-                    file_path,
-                    thumbnail_path,
-                    (SELECT COUNT(*) FROM clips WHERE video_id = videos.id) as clip_count
-                FROM videos
-                ORDER BY title ASC
-            ''').fetchall()
-            
-            videos_data = [{
-                'id': video['id'],
-                'title': video['title'],
-                'file_path': video['file_path'],
-                'thumbnail_path': video['thumbnail_path'],
-                'clip_count': video['clip_count']
-            } for video in videos]
-            
-            # Render initial page quickly
-            response = make_response(render_template('index.html', videos=videos_data))
-            response.headers['X-Content-Type-Options'] = 'nosniff'
-            return response
-            
-        finally:
-            conn.close()
+        videos = Video.query.order_by(Video.title.asc()).all()
+        
+        videos_data = [{
+            'id': video.id,
+            'title': video.title,
+            'file_path': video.file_path,
+            'thumbnail_path': video.thumbnail_path,
+            'clip_count': len(video.clips)
+        } for video in videos]
+        
+        response = make_response(render_template('index.html', videos=videos_data))
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        return response
 
     @app.route('/scan-folder', methods=['POST'])
     def scan_folder():
@@ -204,7 +73,6 @@ def init_routes(app):
         if not os.path.isdir(folder_path):
             return "Invalid folder path", 400
             
-        # Scan folder for videos
         videos = []
         for file_path in Path(folder_path).glob('*'):
             if is_video_file(str(file_path)):
@@ -216,16 +84,14 @@ def init_routes(app):
                 }
                 videos.append(video_info)
                 
-                # Store in database
-                conn = get_db_connection()
-                conn.execute('''
-                    INSERT OR IGNORE INTO videos (title, file_path)
-                    VALUES (?, ?)
-                ''', (video_info['title'], str(file_path)))
-                conn.commit()
-                conn.close()
+                # Store in database using SQLAlchemy
+                video = Video(
+                    title=video_info['title'],
+                    file_path=str(file_path)
+                )
+                db.session.merge(video)  # merge instead of add to handle duplicates
         
-        # Return updated video list HTML
+        db.session.commit()
         return render_template('video_list.html', videos=videos)
 
     @app.route('/delete-videos', methods=['POST'])
@@ -236,34 +102,21 @@ def init_routes(app):
         if not video_ids:
             return jsonify({'status': 'error', 'message': 'No videos selected'}), 400
         
-        conn = get_db_connection()
         try:
-            # Get video information before deletion
-            videos = conn.execute('''
-                SELECT id, file_path, thumbnail_path 
-                FROM videos 
-                WHERE id IN ({})
-            '''.format(','.join('?' * len(video_ids))), video_ids).fetchall()
+            videos = Video.query.filter(Video.id.in_(video_ids)).all()
+            for video in videos:
+                db.session.delete(video)
             
-            # Delete from database
-            conn.execute('''
-                DELETE FROM videos 
-                WHERE id IN ({})
-            '''.format(','.join('?' * len(video_ids))), video_ids)
+            db.session.commit()
             
-            conn.commit()
-            
-            # Return success response with deleted IDs
             return jsonify({
                 'status': 'success',
                 'deleted_ids': video_ids
             })
             
         except Exception as e:
-            conn.rollback()
+            db.session.rollback()
             return jsonify({
                 'status': 'error',
                 'message': str(e)
             }), 500
-        finally:
-            conn.close()

@@ -3,6 +3,7 @@ from helper import get_db_connection
 import json
 import random
 import colorsys
+from models.models import db, Video, Tag, TagCategory, Folder
 
 def generate_distinct_color(existing_colors):
     """Generate a distinct color that's visually different from existing ones"""
@@ -32,94 +33,50 @@ def generate_distinct_color(existing_colors):
 def init_organization_routes(app):
     @app.route('/organize')
     def organize():
-        """Render the organization page"""
-        conn = get_db_connection()
+        """Organization interface for videos, tags, and folders"""
         try:
-            # Get all folders with their parent relationships
-            folders_query = '''
-                WITH RECURSIVE folder_tree(id, name, parent_id, is_open, level, position) AS (
-                    SELECT id, name, parent_id, is_open, 0 as level, position
-                    FROM folders 
-                    WHERE parent_id IS NULL
-                    
-                    UNION ALL
-                    
-                    SELECT f.id, f.name, f.parent_id, f.is_open, ft.level + 1, f.position
-                    FROM folders f
-                    JOIN folder_tree ft ON f.parent_id = ft.id
-                )
-                SELECT * FROM folder_tree
-                ORDER BY level, position, name
-            '''
-            folders = conn.execute(folders_query).fetchall()
-
-            # Get categories with their tags
-            categories = conn.execute('''
-                SELECT c.id, c.name, 
-                       GROUP_CONCAT(t.id) as tag_ids,
-                       GROUP_CONCAT(t.name) as tag_names,
-                       GROUP_CONCAT(t.color) as tag_colors
-                FROM tag_categories c
-                LEFT JOIN tags t ON c.id = t.category_id
-                GROUP BY c.id, c.name
-            ''').fetchall()
-
-            # Format categories and their tags
-            formatted_categories = []
-            for cat in categories:
-                category = {
-                    'id': cat['id'],
-                    'name': cat['name'],
-                    'tags': []
-                }
-                
-                if cat['tag_ids']:
-                    tag_ids = cat['tag_ids'].split(',')
-                    tag_names = cat['tag_names'].split(',')
-                    tag_colors = cat['tag_colors'].split(',')
-                    
-                    category['tags'] = [
-                        {'id': tid, 'name': tname, 'color': tcolor}
-                        for tid, tname, tcolor in zip(tag_ids, tag_names, tag_colors)
-                    ]
-                
-                formatted_categories.append(category)
-
-            # Get uncategorized tags
-            uncategorized_tags = conn.execute('''
-                SELECT id, name, color 
-                FROM tags 
-                WHERE category_id IS NULL
-            ''').fetchall()
-
-            # Get videos with their tags and create a tag color mapping
-            tag_colors = {tag['name']: tag['color'] for tag in conn.execute('SELECT name, color FROM tags').fetchall()}
+            # Get all tag categories with their tags
+            categories = TagCategory.query.all()
+            formatted_categories = [{
+                'id': cat.id,
+                'name': cat.name,
+                'tags': [{
+                    'id': tag.id,
+                    'name': tag.name,
+                    'color': tag.color
+                } for tag in cat.tags]
+            } for cat in categories]
             
-            videos = conn.execute('''
-                SELECT 
-                    v.*,
-                    GROUP_CONCAT(t.name) as tags,
-                    GROUP_CONCAT(t.color) as tag_colors,
-                    (
-                        SELECT GROUP_CONCAT(f.name)
-                        FROM video_folders vf
-                        JOIN folders f ON f.id = vf.folder_id
-                        WHERE vf.video_id = v.id
-                    ) as folders
-                FROM videos v
-                LEFT JOIN video_tags vt ON v.id = vt.video_id
-                LEFT JOIN tags t ON vt.tag_id = t.id
-                GROUP BY v.id
-            ''').fetchall()
-
+            # Get uncategorized tags
+            uncategorized_tags = Tag.query.filter_by(category_id=None).all()
+            
+            # Get all folders
+            folders = Folder.query.order_by(Folder.position).all()
+            
+            # Get videos with their tags and folders
+            videos = Video.query.all()
+            videos_data = [{
+                'id': video.id,
+                'title': video.title,
+                'file_path': video.file_path,
+                'thumbnail_path': video.thumbnail_path,
+                'tags': [{'name': tag.name, 'color': tag.color} for tag in video.tags],
+                'folders': [folder.name for folder in video.folders]
+            } for video in videos]
+            
+            # Create tag color mapping
+            tag_colors = {tag.name: tag.color for tag in Tag.query.all()}
+            
             return render_template('organize.html',
-                                 categories=formatted_categories,
-                                 tags=uncategorized_tags,
-                                 folders=folders,
-                                 videos=videos,
-                                 tag_colors=tag_colors)
-        finally:
-            conn.close()
+                               categories=formatted_categories,
+                               tags=uncategorized_tags,
+                               folders=folders,
+                               videos=videos_data,
+                               tag_colors=tag_colors)
+                               
+        except Exception as e:
+            print(f"Error in organize route: {str(e)}")
+            return str(e), 500
 
     @app.route('/api/folders', methods=['POST'])
     def create_folder():
@@ -131,27 +88,22 @@ def init_organization_routes(app):
         if not name:
             return jsonify({'status': 'error', 'message': 'Folder name is required'}), 400
             
-        conn = get_db_connection()
         try:
-            cursor = conn.execute('''
-                INSERT INTO folders (name, parent_id)
-                VALUES (?, ?)
-            ''', (name, parent_id))
-            folder_id = cursor.lastrowid
-            conn.commit()
+            folder = Folder(name=name, parent_id=parent_id)
+            db.session.add(folder)
+            db.session.commit()
             
             return jsonify({
                 'status': 'success',
                 'folder': {
-                    'id': folder_id,
-                    'name': name,
-                    'parent_id': parent_id
+                    'id': folder.id,
+                    'name': folder.name,
+                    'parent_id': folder.parent_id
                 }
             })
         except Exception as e:
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/categories', methods=['POST'])
     def create_category():
@@ -162,32 +114,29 @@ def init_organization_routes(app):
         if not name:
             return jsonify({'status': 'error', 'message': 'Category name is required'}), 400
             
-        conn = get_db_connection()
         try:
-            cursor = conn.execute(
-                'INSERT INTO tag_categories (name) VALUES (?)',
-                (name,)
-            )
-            conn.commit()
+            category = TagCategory(name=name)
+            db.session.add(category)
+            db.session.commit()
             
             return jsonify({
                 'status': 'success',
-                'category_id': cursor.lastrowid,
-                'name': name
+                'category_id': category.id,
+                'name': category.name
             })
         except Exception as e:
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/categories/<int:category_id>', methods=['PUT', 'DELETE'])
     def manage_category(category_id):
         """Update or delete a tag category"""
-        conn = get_db_connection()
         try:
+            category = TagCategory.query.get_or_404(category_id)
+            
             if request.method == 'DELETE':
-                conn.execute('DELETE FROM tag_categories WHERE id = ?', (category_id,))
-                conn.commit()
+                db.session.delete(category)
+                db.session.commit()
                 return jsonify({'status': 'success'})
             
             elif request.method == 'PUT':
@@ -196,17 +145,13 @@ def init_organization_routes(app):
                 if not name:
                     return jsonify({'status': 'error', 'message': 'Name is required'}), 400
                 
-                conn.execute(
-                    'UPDATE tag_categories SET name = ? WHERE id = ?',
-                    (name, category_id)
-                )
-                conn.commit()
+                category.name = name
+                db.session.commit()
                 return jsonify({'status': 'success'})
             
         except Exception as e:
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/tags', methods=['POST'])
     def create_tag():
@@ -251,41 +196,24 @@ def init_organization_routes(app):
     @app.route('/api/tags/<int:tag_id>', methods=['PUT'])
     def update_tag(tag_id):
         """Update a tag's category"""
-        data = request.json
-        category_id = data.get('category_id')
-        
-        # Convert empty string to None for uncategorized
-        if category_id == '':
-            category_id = None
-        
-        conn = get_db_connection()
         try:
-            # Verify the tag exists first
-            tag = conn.execute('SELECT id FROM tags WHERE id = ?', (tag_id,)).fetchone()
-            if not tag:
-                return jsonify({'status': 'error', 'message': 'Tag not found'}), 404
+            tag = Tag.query.get_or_404(tag_id)
+            category_id = request.json.get('category_id')
             
-            # If category_id is provided, verify it exists
-            if category_id is not None:
-                category = conn.execute('SELECT id FROM tag_categories WHERE id = ?', 
-                                     (category_id,)).fetchone()
-                if not category:
-                    return jsonify({'status': 'error', 'message': 'Category not found'}), 404
+            # Convert empty string to None for uncategorized
+            if category_id == '':
+                category_id = None
+            elif category_id is not None:
+                # Verify category exists if one is provided
+                TagCategory.query.get_or_404(category_id)
             
-            # Update the tag
-            conn.execute('''
-                UPDATE tags 
-                SET category_id = ?
-                WHERE id = ?
-            ''', (category_id, tag_id))
-            conn.commit()
+            tag.category_id = category_id
+            db.session.commit()
             
             return jsonify({'status': 'success'})
         except Exception as e:
-            conn.rollback()
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/videos/organize', methods=['POST'])
     def organize_videos():
@@ -298,145 +226,101 @@ def init_organization_routes(app):
         if not video_ids:
             return jsonify({'status': 'error', 'message': 'No videos selected'}), 400
             
-        conn = get_db_connection()
         try:
-            # Verify all video_ids exist
-            for video_id in video_ids:
-                video = conn.execute('SELECT id FROM videos WHERE id = ?', (video_id,)).fetchone()
-                if not video:
-                    return jsonify({'status': 'error', 'message': f'Video {video_id} not found'}), 404
+            videos = Video.query.filter(Video.id.in_(video_ids)).all()
+            if len(videos) != len(video_ids):
+                return jsonify({'status': 'error', 'message': 'Some videos not found'}), 404
             
-            # Verify all tag_ids exist if provided
             if tag_ids:
-                for tag_id in tag_ids:
-                    tag = conn.execute('SELECT id FROM tags WHERE id = ?', (tag_id,)).fetchone()
-                    if not tag:
-                        return jsonify({'status': 'error', 'message': f'Tag {tag_id} not found'}), 404
+                tags = Tag.query.filter(Tag.id.in_(tag_ids)).all()
+                if len(tags) != len(tag_ids):
+                    return jsonify({'status': 'error', 'message': 'Some tags not found'}), 404
+                
+                for video in videos:
+                    video.tags.extend([tag for tag in tags if tag not in video.tags])
             
-            # Add tags to videos
-            for video_id in video_ids:
-                for tag_id in tag_ids:
-                    conn.execute('''
-                        INSERT OR IGNORE INTO video_tags (video_id, tag_id)
-                        VALUES (?, ?)
-                    ''', (video_id, tag_id))
+            if folder_ids:
+                folders = Folder.query.filter(Folder.id.in_(folder_ids)).all()
+                if len(folders) != len(folder_ids):
+                    return jsonify({'status': 'error', 'message': 'Some folders not found'}), 404
+                
+                for video in videos:
+                    video.folders.extend([folder for folder in folders if folder not in video.folders])
             
-            conn.commit()
+            db.session.commit()
             return jsonify({'status': 'success'})
+            
         except Exception as e:
-            conn.rollback()
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/folders/<int:folder_id>/toggle', methods=['POST'])
     def toggle_folder(folder_id):
         """Toggle folder open/closed state"""
-        conn = get_db_connection()
         try:
-            # Get current state
-            cursor = conn.execute('SELECT is_open FROM folders WHERE id = ?', (folder_id,))
-            current_state = cursor.fetchone()['is_open']
+            folder = Folder.query.get_or_404(folder_id)
+            folder.is_open = not folder.is_open
+            db.session.commit()
             
-            # Toggle state
-            new_state = not current_state
-            conn.execute('UPDATE folders SET is_open = ? WHERE id = ?', 
-                        (new_state, folder_id))
-            conn.commit()
-            
-            return jsonify({'status': 'success', 'is_open': new_state})
+            return jsonify({'status': 'success', 'is_open': folder.is_open})
         except Exception as e:
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/folders/reorder', methods=['POST'])
     def reorder_folders():
         """Update folder positions"""
         data = request.json
-        folder_positions = data.get('positions', [])  # List of {id: x, position: y, parent_id: z}
+        folder_positions = data.get('positions', [])
         
         if not folder_positions:
             return jsonify({'status': 'error', 'message': 'No positions provided'}), 400
         
-        conn = get_db_connection()
         try:
-            # Update positions in a transaction
             for item in folder_positions:
-                # Update both position and parent_id
-                conn.execute('''
-                    UPDATE folders 
-                    SET position = ?, 
-                        parent_id = ?
-                    WHERE id = ?
-                ''', (item['position'], item.get('parent_id'), item['id']))
+                folder = Folder.query.get(item['id'])
+                if folder:
+                    folder.position = item['position']
+                    folder.parent_id = item.get('parent_id')
             
-            conn.commit()
+            db.session.commit()
             return jsonify({'status': 'success'})
         except Exception as e:
-            conn.rollback()
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/folders/<int:folder_id>', methods=['PATCH', 'DELETE'])
     def manage_folder(folder_id):
         """Update or delete a folder"""
-        conn = get_db_connection()
         try:
-            # First verify the folder exists
-            folder = conn.execute('SELECT id FROM folders WHERE id = ?', (folder_id,)).fetchone()
-            if not folder:
-                return jsonify({'status': 'error', 'message': 'Folder not found'}), 404
+            folder = Folder.query.get_or_404(folder_id)
 
             if request.method == 'DELETE':
-                # First, recursively get all child folder IDs
-                child_folders = conn.execute('''
-                    WITH RECURSIVE folder_tree AS (
-                        SELECT id FROM folders WHERE id = ?
-                        UNION ALL
-                        SELECT f.id 
-                        FROM folders f
-                        JOIN folder_tree ft ON f.parent_id = ft.id
-                    )
-                    SELECT id FROM folder_tree
-                ''', (folder_id,)).fetchall()
+                # Get all descendant folders
+                def get_descendants(f):
+                    descendants = []
+                    for child in f.children:
+                        descendants.append(child)
+                        descendants.extend(get_descendants(child))
+                    return descendants
+
+                folders_to_delete = [folder] + get_descendants(folder)
                 
-                folder_ids = [f['id'] for f in child_folders]
+                for f in folders_to_delete:
+                    db.session.delete(f)
                 
-                # Delete all video associations for these folders
-                placeholders = ','.join('?' * len(folder_ids))
-                conn.execute(f'''
-                    DELETE FROM video_folders 
-                    WHERE folder_id IN ({placeholders})
-                ''', folder_ids)
-                
-                # Delete the folders
-                conn.execute(f'''
-                    DELETE FROM folders 
-                    WHERE id IN ({placeholders})
-                ''', folder_ids)
-                
-                conn.commit()
+                db.session.commit()
                 return jsonify({'status': 'success'})
                 
             elif request.method == 'PATCH':
-                data = request.json
-                name = data.get('name')
+                name = request.json.get('name')
                 if not name:
                     return jsonify({'status': 'error', 'message': 'Name is required'}), 400
                 
-                conn.execute('''
-                    UPDATE folders 
-                    SET name = ? 
-                    WHERE id = ?
-                ''', (name, folder_id))
-                
-                conn.commit()
+                folder.name = name
+                db.session.commit()
                 return jsonify({'status': 'success'})
                 
         except Exception as e:
-            conn.rollback()
-            return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close() 
+            db.session.rollback()
+            return jsonify({'status': 'error', 'message': str(e)}), 500 

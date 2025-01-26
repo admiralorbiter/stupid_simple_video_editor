@@ -8,69 +8,57 @@ from tkinter import Tk, filedialog
 from gradio import Video
 from helper import *
 from werkzeug.utils import secure_filename
+from models.models import db, Video
 
 def init_video_routes(app):
     @app.route('/stream_video/<int:video_id>')
     def stream_video(video_id):
         """Stream video file"""
-        conn = get_db_connection()
-        try:
-            video = conn.execute('SELECT * FROM videos WHERE id = ?', (video_id,)).fetchone()
-            if video is None:
-                return "Video not found", 404
-                
-            video_path = video['file_path']
-            if not os.path.exists(video_path):
-                return "Video file not found", 404
+        video = Video.query.get_or_404(video_id)
+        
+        if not os.path.exists(video.file_path):
+            return "Video file not found", 404
 
-            def generate():
-                with open(video_path, 'rb') as video_file:
-                    while True:
-                        chunk = video_file.read(8192)
-                        if not chunk:
-                            break
-                        yield chunk
+        def generate():
+            with open(video.file_path, 'rb') as video_file:
+                while True:
+                    chunk = video_file.read(8192)
+                    if not chunk:
+                        break
+                    yield chunk
 
-            response = app.response_class(
-                generate(),
-                mimetype='video/mp4'
-            )
-            response.headers['Accept-Ranges'] = 'bytes'
-            return response
-            
-        finally:
-            conn.close()
+        response = app.response_class(
+            generate(),
+            mimetype='video/mp4'
+        )
+        response.headers['Accept-Ranges'] = 'bytes'
+        return response
 
     @app.route('/edit-video/<int:video_id>')
     def edit_video(video_id):
         """Video editing interface"""
-        conn = get_db_connection()
-        video = conn.execute('SELECT * FROM videos WHERE id = ?', 
-                           (video_id,)).fetchone()
-        conn.close()
+        video = Video.query.get_or_404(video_id)
         
-        if video is None:
-            flash('Video not found.', 'error')
-            return redirect(url_for('index'))
+        video_data = {
+            'id': video.id,
+            'title': video.title,
+            'file_path': video.file_path,
+            'thumbnail_path': video.thumbnail_path,
+            'video_url': url_for('stream_video', video_id=video.id)
+        }
         
-        video = dict(video)
-        video['video_url'] = url_for('stream_video', video_id=video['id'])
-        
-        return render_template('edit_video.html', video=video)
+        return render_template('edit_video.html', video=video_data)
 
     @app.route('/browse-folder')
     def browse_folder():
         """Open system folder browser dialog and return selected path"""
         try:
-            # Create and immediately withdraw the root window
             root = Tk()
             root.withdraw()
-            root.attributes('-topmost', True)  # Make sure it appears on top
+            root.attributes('-topmost', True)
             
-            # Open the dialog
             folder_path = filedialog.askdirectory(parent=root)
             
-            # Clean up the root window
             root.destroy()
             
             if folder_path:
@@ -83,7 +71,6 @@ def init_video_routes(app):
                 'status': 'cancelled'
             })
         except Exception as e:
-            # Make sure to clean up even if there's an error
             try:
                 root.destroy()
             except:
@@ -127,7 +114,6 @@ def init_video_routes(app):
         total = int(data.get('total', 0))
         
         try:
-            conn = get_db_connection()
             files = [f for f in Path(folder_path).glob('*') if is_video_file(str(f))]
             chunk_size = 2  # Process 2 files at a time
             
@@ -160,12 +146,14 @@ def init_video_routes(app):
                     has_thumbnail = False
                     relative_thumbnail_path = None
                 
-                # Store in database
-                conn.execute('''
-                    INSERT OR REPLACE INTO videos (title, file_path, thumbnail_path)
-                    VALUES (?, ?, ?)
-                ''', (file.stem, absolute_path, relative_thumbnail_path if has_thumbnail else None))
-                conn.commit()
+                # Store in database using SQLAlchemy
+                video = Video(
+                    title=file.stem,
+                    file_path=absolute_path,
+                    thumbnail_path=relative_thumbnail_path if has_thumbnail else None
+                )
+                db.session.merge(video)  # Use merge to handle duplicates
+                db.session.commit()
                 
                 processed += 1
             
@@ -173,7 +161,7 @@ def init_video_routes(app):
             
             if processed >= total:
                 # Scan complete, return the video list HTML
-                videos = conn.execute('SELECT * FROM videos ORDER BY title').fetchall()
+                videos = Video.query.order_by(Video.title).all()
                 html = render_template('video_list.html', videos=videos)
                 return jsonify({
                     "progress": 100,
@@ -191,12 +179,11 @@ def init_video_routes(app):
                 
         except Exception as e:
             print(f"Error during scan: {e}")
+            db.session.rollback()
             return jsonify({
                 "error": str(e)
             }), 500
-        finally:
-            conn.close()
-        
+
     @app.route('/import-videos', methods=['POST'])
     def import_videos():
         """Import videos from the selected folder"""
@@ -209,15 +196,14 @@ def init_video_routes(app):
                 </div>
             """
         
-        conn = get_db_connection()
         try:
             imported_count = 0
             skipped_count = 0
             
             for file in Path(folder_path).glob('*'):
                 if is_video_file(str(file)):
-                    existing = conn.execute('SELECT id FROM videos WHERE file_path = ?', 
-                                         (str(file),)).fetchone()
+                    # Check if video already exists
+                    existing = Video.query.filter_by(file_path=str(file)).first()
                     
                     if existing:
                         skipped_count += 1
@@ -231,18 +217,19 @@ def init_video_routes(app):
                         else:
                             relative_thumbnail_path = None
                         
-                        conn.execute('''
-                            INSERT INTO videos (title, file_path, thumbnail_path)
-                            VALUES (?, ?, ?)
-                        ''', (file.stem, str(file), relative_thumbnail_path))
-                        
+                        video = Video(
+                            title=file.stem,
+                            file_path=str(file),
+                            thumbnail_path=relative_thumbnail_path
+                        )
+                        db.session.add(video)
                         imported_count += 1
                         
                     except Exception as e:
                         print(f"Error processing {file}: {str(e)}")
                         continue
             
-            conn.commit()
+            db.session.commit()
             return f"""
                 <div class="alert alert-success">
                     <i class="bi bi-check-circle me-2"></i>
@@ -252,12 +239,11 @@ def init_video_routes(app):
             """
             
         except Exception as e:
+            db.session.rollback()
             print(f"Error importing videos: {str(e)}")
             return f"""
                 <div class="alert alert-danger">
                     <i class="bi bi-exclamation-triangle me-2"></i>
                     Error importing videos: {str(e)}
                 </div>
-            """
-        finally:
-            conn.close() 
+            """ 
