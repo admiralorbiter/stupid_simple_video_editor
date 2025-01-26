@@ -3,6 +3,7 @@
     {% for video in videos %}
     <div class="video-list-item" 
          data-video-id="{{ video.id }}"
+         data-video-url="{{ url_for('stream_video', video_id=video.id) }}"
          hx-get="/edit-video/{{ video.id }}"
          hx-target="#editor-content"
          hx-trigger="click">

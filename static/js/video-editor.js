@@ -18,6 +18,14 @@ class VideoEditor {
             if (videoPlayer && timelineSlider) {
                 clearInterval(initializeInterval);
                 this.videoPlayer = videoPlayer;
+                
+                // Get video URL from the selected video item
+                const selectedVideo = document.querySelector('.video-list-item.selected');
+                if (selectedVideo) {
+                    const videoUrl = selectedVideo.dataset.videoUrl;
+                    this.videoPlayer.src = videoUrl;
+                }
+                
                 this.timelineSlider = timelineSlider;
                 this.segments = this.segments || [];  // Maintain existing segments if they exist
                 this.isDragging = false;
@@ -33,6 +41,11 @@ class VideoEditor {
                 console.log('Video Editor initialized with segments:', this.segments);
             }
         }, 100);
+
+        const startInput = document.getElementById('new-segment-start');
+        const endInput = document.getElementById('new-segment-end');
+        if (startInput) this.formatTimeInput(startInput);
+        if (endInput) this.formatTimeInput(endInput);
     }
 
     initializeEventListeners() {
@@ -197,29 +210,41 @@ class VideoEditor {
             // Convert input times to seconds
             startTime = this.timeToSeconds(startInput.value);
             endTime = this.timeToSeconds(endInput.value);
-        }
-
-        // Ensure we have valid numbers
-        if (typeof startTime !== 'number' || typeof endTime !== 'number' || 
-            isNaN(startTime) || isNaN(endTime)) {
-            // Only show warning if both times are invalid
-            if (isNaN(startTime) && isNaN(endTime)) {
-                this.showAlert('Invalid segment times', 'warning');
+            
+            // Validate input fields
+            if (!startInput.value || !endInput.value) {
+                this.showAlert('Please enter both start and end times', 'warning');
                 return;
             }
         }
+
+        // Ensure we have valid numbers
+        if (isNaN(startTime) || isNaN(endTime)) {
+            this.showAlert('Invalid time format', 'warning');
+            return;
+        }
         
         // Ensure times are within video bounds
-        startTime = Math.max(0, Math.min(startTime, this.videoPlayer.duration));
-        endTime = Math.max(0, Math.min(endTime, this.videoPlayer.duration));
+        const duration = this.videoPlayer.duration;
+        startTime = Math.max(0, Math.min(startTime, duration));
+        endTime = Math.max(0, Math.min(endTime, duration));
         
         // Ensure start is before end
         if (startTime >= endTime) {
-            const temp = startTime;
-            startTime = endTime;
-            endTime = temp;
+            [startTime, endTime] = [endTime, startTime];
         }
         
+        // Check for overlapping segments
+        const hasOverlap = this.segments.some(segment => {
+            return (startTime < segment.endSeconds && endTime > segment.startSeconds);
+        });
+        
+        if (hasOverlap) {
+            this.showAlert('Segments cannot overlap', 'warning');
+            return;
+        }
+        
+        // Create new segment
         const segment = {
             start: this.formatTime(startTime),
             end: this.formatTime(endTime),
@@ -232,11 +257,13 @@ class VideoEditor {
         this.updateSegmentsList();
         this.updateSegmentsVisualization();
         
-        // Clear any existing inputs
+        // Clear inputs
         const startInput = document.getElementById('new-segment-start');
         const endInput = document.getElementById('new-segment-end');
         if (startInput) startInput.value = '';
         if (endInput) endInput.value = '';
+        
+        this.showAlert('Segment added successfully', 'success');
     }
 
     removeSegment(index) {
@@ -565,6 +592,48 @@ class VideoEditor {
             '#6610f2', '#fd7e14', '#20c997', '#e83e8c'
         ];
         return colors[index % colors.length];
+    }
+
+    validateSegment(startTime, endTime) {
+        const duration = this.videoPlayer.duration;
+        
+        // Check if times are valid numbers
+        if (isNaN(startTime) || isNaN(endTime)) {
+            return { valid: false, message: 'Invalid time format' };
+        }
+        
+        // Check if times are within video bounds
+        if (startTime < 0 || endTime > duration) {
+            return { valid: false, message: 'Times must be within video duration' };
+        }
+        
+        // Check if start is before end
+        if (startTime >= endTime) {
+            return { valid: false, message: 'Start time must be before end time' };
+        }
+        
+        // Check for overlapping segments
+        const hasOverlap = this.segments.some(segment => {
+            return (startTime < segment.endSeconds && endTime > segment.startSeconds);
+        });
+        
+        if (hasOverlap) {
+            return { valid: false, message: 'Segments cannot overlap' };
+        }
+        
+        return { valid: true };
+    }
+
+    formatTimeInput(input) {
+        input.addEventListener('blur', (e) => {
+            const value = e.target.value;
+            if (value) {
+                const seconds = this.timeToSeconds(value);
+                if (!isNaN(seconds)) {
+                    e.target.value = this.formatTime(seconds);
+                }
+            }
+        });
     }
 }
 

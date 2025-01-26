@@ -1,25 +1,45 @@
 import json
-from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file, make_response
+from flask import flash, redirect, render_template, send_from_directory, url_for, request, session, jsonify, send_file, make_response
 import os
 from pathlib import Path
 import subprocess
 from tkinter import Tk, filedialog
+
+from gradio import Video
 from helper import *
 from werkzeug.utils import secure_filename
 
 def init_video_routes(app):
-    @app.route('/video/<int:video_id>')
-    def serve_video(video_id):
-        """Serve video file directly"""
+    @app.route('/stream_video/<int:video_id>')
+    def stream_video(video_id):
+        """Stream video file"""
         conn = get_db_connection()
-        video = conn.execute('SELECT file_path FROM videos WHERE id = ?', 
-                            (video_id,)).fetchone()
-        conn.close()
-        
-        if video is None:
-            return "Video not found", 404
-        
-        return send_file(video['file_path'], mimetype='video/mp4')
+        try:
+            video = conn.execute('SELECT * FROM videos WHERE id = ?', (video_id,)).fetchone()
+            if video is None:
+                return "Video not found", 404
+                
+            video_path = video['file_path']
+            if not os.path.exists(video_path):
+                return "Video file not found", 404
+
+            def generate():
+                with open(video_path, 'rb') as video_file:
+                    while True:
+                        chunk = video_file.read(8192)
+                        if not chunk:
+                            break
+                        yield chunk
+
+            response = app.response_class(
+                generate(),
+                mimetype='video/mp4'
+            )
+            response.headers['Accept-Ranges'] = 'bytes'
+            return response
+            
+        finally:
+            conn.close()
 
     @app.route('/edit-video/<int:video_id>')
     def edit_video(video_id):
@@ -34,7 +54,7 @@ def init_video_routes(app):
             return redirect(url_for('index'))
         
         video = dict(video)
-        video['video_url'] = url_for('serve_video', video_id=video['id'])
+        video['video_url'] = url_for('stream_video', video_id=video['id'])
         
         return render_template('edit_video.html', video=video)
 
