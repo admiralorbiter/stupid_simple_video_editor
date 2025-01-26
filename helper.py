@@ -4,39 +4,31 @@ from pathlib import Path
 import shutil
 import sqlite3
 import subprocess
+from models.models import db, Clip, Video
 
 
 def get_clips_data():
     """Helper function to get formatted clips data"""
-    conn = get_db_connection()
     try:
-        clips = conn.execute('''
-            SELECT 
-                c.id,
-                c.clip_name,
-                c.start_time,
-                c.end_time,
-                c.clip_path,
-                c.created_at,
-                c.thumbnail_path,
-                v.title as video_title
-            FROM clips c
-            JOIN videos v ON c.video_id = v.id
-            ORDER BY c.created_at DESC
-        ''').fetchall()
+        # Use SQLAlchemy models instead of raw SQL
+        clips = db.session.query(Clip, Video.title.label('video_title'))\
+            .join(Video)\
+            .order_by(Clip.created_at.desc())\
+            .all()
         
         return [{
-            'id': clip[0],
-            'name': clip[1],
-            'start_time': clip[2],
-            'end_time': clip[3],
-            'path': clip[4],
-            'created_at': clip[5],
-            'thumbnail_path': clip[6],
-            'video_title': clip[7]
+            'id': clip.Clip.id,
+            'name': clip.Clip.clip_name,
+            'start_time': clip.Clip.start_time,
+            'end_time': clip.Clip.end_time,
+            'path': clip.Clip.clip_path,
+            'created_at': clip.Clip.created_at,
+            'thumbnail_path': clip.Clip.thumbnail_path,
+            'video_title': clip.video_title
         } for clip in clips]
-    finally:
-        conn.close() 
+    except Exception as e:
+        print(f"Error getting clips data: {str(e)}")
+        return []
 
 def generate_thumbnail(video_path, output_path, timestamp="00:00:05"):
     """Generate a thumbnail for a video at the specified timestamp"""
@@ -122,45 +114,36 @@ def delete_thumbnail(thumbnail_path):
 
 def cleanup_orphaned_thumbnails():
     """Clean up thumbnails that don't have corresponding clips in the database"""
-    conn = get_db_connection()
     try:
-        # Get all thumbnail paths from the database
+        # Get all thumbnail paths from the database using SQLAlchemy
         db_thumbnails = set()
-        clips = conn.execute('''
-            SELECT DISTINCT thumbnail_path 
-            FROM clips 
-            WHERE thumbnail_path IS NOT NULL 
-            AND clip_path IS NOT NULL
-        ''').fetchall()
+        clips = Clip.query.filter(
+            Clip.thumbnail_path.isnot(None),
+            Clip.clip_path.isnot(None)
+        ).with_entities(Clip.thumbnail_path).distinct().all()
         
         for clip in clips:
-            if clip['thumbnail_path']:
-                # Add both the full path and just the filename to handle different path formats
-                db_thumbnails.add(clip['thumbnail_path'])
-                db_thumbnails.add(os.path.basename(clip['thumbnail_path']))
+            if clip.thumbnail_path:
+                db_thumbnails.add(clip.thumbnail_path)
+                db_thumbnails.add(os.path.basename(clip.thumbnail_path))
         
         # Check all thumbnails in the clips directory
         clips_thumb_dir = Path('static/thumbnails/clips')
         if clips_thumb_dir.exists():
             for thumb_file in clips_thumb_dir.glob('*'):
                 relative_path = f"thumbnails/clips/{thumb_file.name}"
-                # Check both the full path and just the filename
                 if (relative_path not in db_thumbnails and 
                     thumb_file.name not in db_thumbnails):
                     print(f"Found orphaned thumbnail: {thumb_file}")
                     # Double check that no clips use this thumbnail
-                    check = conn.execute('''
-                        SELECT COUNT(*) as count 
-                        FROM clips 
-                        WHERE thumbnail_path LIKE ?
-                    ''', (f'%{thumb_file.name}%',)).fetchone()
+                    clip_count = Clip.query.filter(
+                        Clip.thumbnail_path.like(f'%{thumb_file.name}%')
+                    ).count()
                     
-                    if check['count'] == 0:
+                    if clip_count == 0:
                         print(f"Deleting confirmed orphaned thumbnail: {thumb_file}")
                         thumb_file.unlink()
                     else:
                         print(f"Thumbnail still in use, keeping: {thumb_file}")
     except Exception as e:
         print(f"Error cleaning up orphaned thumbnails: {str(e)}")
-    finally:
-        conn.close()

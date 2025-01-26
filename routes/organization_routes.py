@@ -164,34 +164,34 @@ def init_organization_routes(app):
         if not name:
             return jsonify({'status': 'error', 'message': 'Tag name is required'}), 400
             
-        conn = get_db_connection()
         try:
-            existing_colors = [row['color'] for row in conn.execute(
-                'SELECT color FROM tags').fetchall()]
+            # Get existing colors using SQLAlchemy
+            existing_colors = [tag.color for tag in Tag.query.all()]
             
             if not color:
                 color = generate_distinct_color(existing_colors)
             
-            cursor = conn.execute('''
-                INSERT INTO tags (name, color, category_id)
-                VALUES (?, ?, ?)
-            ''', (name, color, category_id))
-            tag_id = cursor.lastrowid
-            conn.commit()
+            # Create new tag using SQLAlchemy model
+            tag = Tag(
+                name=name,
+                color=color,
+                category_id=category_id
+            )
+            db.session.add(tag)
+            db.session.commit()
             
             return jsonify({
                 'status': 'success',
                 'tag': {
-                    'id': tag_id,
-                    'name': name,
-                    'color': color,
-                    'category_id': category_id
+                    'id': tag.id,
+                    'name': tag.name,
+                    'color': tag.color,
+                    'category_id': tag.category_id
                 }
             })
         except Exception as e:
+            db.session.rollback()
             return jsonify({'status': 'error', 'message': str(e)}), 500
-        finally:
-            conn.close()
 
     @app.route('/api/tags/<int:tag_id>', methods=['PUT'])
     def update_tag(tag_id):
