@@ -202,8 +202,11 @@ class VideoEditor {
         // Ensure we have valid numbers
         if (typeof startTime !== 'number' || typeof endTime !== 'number' || 
             isNaN(startTime) || isNaN(endTime)) {
-            this.showAlert('Invalid segment times', 'warning');
-            return;
+            // Only show warning if both times are invalid
+            if (isNaN(startTime) && isNaN(endTime)) {
+                this.showAlert('Invalid segment times', 'warning');
+                return;
+            }
         }
         
         // Ensure times are within video bounds
@@ -212,8 +215,9 @@ class VideoEditor {
         
         // Ensure start is before end
         if (startTime >= endTime) {
-            this.showAlert('End time must be after start time', 'warning');
-            return;
+            const temp = startTime;
+            startTime = endTime;
+            endTime = temp;
         }
         
         const segment = {
@@ -225,7 +229,6 @@ class VideoEditor {
 
         this.segments.push(segment);
         this.segments.sort((a, b) => a.startSeconds - b.startSeconds);
-        console.log('Added segment, current segments:', this.segments); // Debug log
         this.updateSegmentsList();
         this.updateSegmentsVisualization();
         
@@ -281,6 +284,10 @@ class VideoEditor {
         timelineSegments.innerHTML = '';
         
         this.segments.forEach((segment, index) => {
+            if (typeof segment.startSeconds !== 'number' || typeof segment.endSeconds !== 'number') {
+                return; // Skip invalid segments
+            }
+            
             const startPercent = (segment.startSeconds / this.videoPlayer.duration) * 100;
             const width = ((segment.endSeconds - segment.startSeconds) / this.videoPlayer.duration) * 100;
             
@@ -289,11 +296,13 @@ class VideoEditor {
             segmentEl.dataset.index = index;
             segmentEl.style.left = `${startPercent}%`;
             segmentEl.style.width = `${width}%`;
-            segmentEl.style.backgroundColor = this.getSegmentColor(index);
+            
+            const startTimeStr = this.formatTime(segment.startSeconds);
+            const endTimeStr = this.formatTime(segment.endSeconds);
             
             segmentEl.innerHTML = `
                 <div class="handle handle-left" data-index="${index}" data-type="start"></div>
-                <div class="segment-label">${segment.start} - ${segment.end}</div>
+                <div class="segment-label">${startTimeStr} - ${endTimeStr}</div>
                 <div class="handle handle-right" data-index="${index}" data-type="end"></div>
             `;
             
@@ -398,30 +407,27 @@ class VideoEditor {
     }
 
     formatTime(seconds) {
-        const pad = (num) => String(num).padStart(2, '0');
+        if (typeof seconds !== 'number' || isNaN(seconds)) {
+            return '00:00';
+        }
+        
+        seconds = Math.max(0, Math.floor(seconds));
         const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = Math.floor(seconds % 60);
-        return `${pad(minutes)}:${pad(remainingSeconds)}`;
+        const remainingSeconds = seconds % 60;
+        return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
 
     timeToSeconds(timeStr) {
-        if (!timeStr) return NaN;
-        
-        // Handle direct number input
-        if (!isNaN(timeStr)) {
-            return parseFloat(timeStr);
+        if (!timeStr || typeof timeStr !== 'string') {
+            return 0;
         }
         
-        // Handle MM:SS format
-        const parts = timeStr.split(':');
-        if (parts.length !== 2) return NaN;
+        const [minutes, seconds] = timeStr.split(':').map(Number);
+        if (isNaN(minutes) || isNaN(seconds)) {
+            return 0;
+        }
         
-        const minutes = parseInt(parts[0], 10);
-        const seconds = parseInt(parts[1], 10);
-        
-        if (isNaN(minutes) || isNaN(seconds)) return NaN;
-        
-        return minutes * 60 + seconds;
+        return (minutes * 60) + seconds;
     }
 
     showAlert(message, type = 'info') {
@@ -476,15 +482,20 @@ class VideoEditor {
         const rect = timelineTrack.getBoundingClientRect();
         
         // Convert pixel positions to timeline positions (0 to 1)
-        const startPos = Math.max(0, Math.min(1, (startX - rect.left) / rect.width));
-        const endPos = Math.max(0, Math.min(1, (endX - rect.left) / rect.width));
+        const startPos = Math.max(0, Math.min(1, startX / rect.width));
+        const endPos = Math.max(0, Math.min(1, endX / rect.width));
         
         // Convert positions to times
         const startTime = startPos * this.videoPlayer.duration;
         const endTime = endPos * this.videoPlayer.duration;
         
-        // Add the segment
-        this.addSegment(Math.min(startTime, endTime), Math.max(startTime, endTime));
+        // Add the segment with validated times
+        if (!isNaN(startTime) && !isNaN(endTime)) {
+            this.addSegment(
+                Math.min(startTime, endTime), 
+                Math.max(startTime, endTime)
+            );
+        }
         
         // Remove the selection overlay
         const overlay = document.querySelector('.selection-overlay');
