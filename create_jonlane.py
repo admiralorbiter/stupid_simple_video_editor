@@ -2,7 +2,7 @@ from getpass import getpass
 import sys
 from werkzeug.security import generate_password_hash
 from app import app
-from models import User, db
+from models.models import User, db
 
 def create_accounts():
     with app.app_context():

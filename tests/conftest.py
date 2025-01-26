@@ -2,7 +2,7 @@
 
 import pytest
 from app import app as flask_app
-from models import db
+from models.models import db
 from config import TestingConfig
 
 @pytest.fixture

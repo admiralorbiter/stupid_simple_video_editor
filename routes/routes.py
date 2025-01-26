@@ -1,7 +1,7 @@
 from flask import flash, redirect, render_template, url_for, request, session, jsonify, send_file, make_response
 from flask_login import login_required, login_user, logout_user
 from forms import LoginForm
-from models import User, db
+from models.models import User, db
 from werkzeug.security import check_password_hash, generate_password_hash
 import os
 from pathlib import Path
@@ -10,10 +10,10 @@ from tkinter import Tk, filedialog
 from datetime import datetime
 import shutil  # If using the copy option
 from helper import *
-from clip_routes import init_clip_routes
-from auth_routes import init_auth_routes
-from video_routes import init_video_routes
-from organization_routes import init_organization_routes
+from routes.clip_routes import init_clip_routes
+from routes.auth_routes import init_auth_routes
+from routes.video_routes import init_video_routes
+from routes.organization_routes import init_organization_routes
 
 def init_routes(app):
     """Initialize routes and setup database"""

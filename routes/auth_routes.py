@@ -1,7 +1,7 @@
 from flask import flash, redirect, render_template, url_for
 from flask_login import login_required, login_user, logout_user
 from forms import LoginForm
-from models import User
+from models.models import User
 from werkzeug.security import check_password_hash
 
 def init_auth_routes(app):

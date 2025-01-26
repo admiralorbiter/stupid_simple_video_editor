@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone
-from models import User, db
+from models.models import User, db
 
 @pytest.fixture
 def test_user():
