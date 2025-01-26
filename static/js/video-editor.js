@@ -66,15 +66,18 @@ class VideoEditor {
 
         // Timeline controls
         this.timelineSlider.addEventListener('input', (e) => {
+            const currentTime = parseFloat(e.target.value);
             this.isDragging = true;
-            document.querySelector('.current-time').textContent = this.formatTime(e.target.value);
+            this.videoPlayer.currentTime = currentTime;
+            document.querySelector('.current-time').textContent = this.formatTime(currentTime);
             this.updateTimelineProgress();
             this.showTimeTooltip(e);
         });
 
         this.timelineSlider.addEventListener('change', (e) => {
+            const currentTime = parseFloat(e.target.value);
             this.isDragging = false;
-            this.videoPlayer.currentTime = e.target.value;
+            this.videoPlayer.currentTime = currentTime;
             this.hideTimeTooltip();
         });
 
@@ -178,8 +181,11 @@ class VideoEditor {
     }
 
     updateTimelineProgress() {
-        const progress = (this.timelineSlider.value / this.timelineSlider.max) * 100;
+        const currentTime = this.videoPlayer.currentTime;
+        const duration = this.videoPlayer.duration;
+        const progress = (currentTime / duration) * 100;
         document.querySelector('.timeline-progress').style.width = `${progress}%`;
+        this.timelineSlider.value = currentTime;
     }
 
     showTimeTooltip(event) {
