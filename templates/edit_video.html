@@ -113,3 +113,6 @@
         </form>
     </div>
 </div>
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/video-editor.js') }}"></script>
+{% endblock %}
