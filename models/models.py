@@ -16,8 +16,17 @@ class User(db.Model, UserMixin):
     password_hash = db.Column(db.String(256), nullable=False)
     first_name = db.Column(db.String(64))
     last_name = db.Column(db.String(64))
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
 
 class Video(db.Model):
     __tablename__ = 'videos'
@@ -26,7 +35,10 @@ class Video(db.Model):
     title = db.Column(db.String(255), nullable=False)
     file_path = db.Column(db.String(255), unique=True, nullable=False)
     thumbnail_path = db.Column(db.String(255))
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(
+        db.DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc)
+    )
     
     # Relationships
     clips = db.relationship('Clip', backref='video', lazy=True, cascade='all, delete-orphan')
@@ -59,7 +71,11 @@ class Folder(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Self-referential relationship for parent/child folders
-    children = db.relationship('Folder', backref=db.backref('parent', remote_side=[id]))
+    children = db.relationship(
+        'Folder',
+        backref=db.backref('parent', remote_side=[id]),
+        cascade='all, delete-orphan'
+    )
 
 class TagCategory(db.Model):
     __tablename__ = 'tag_categories'

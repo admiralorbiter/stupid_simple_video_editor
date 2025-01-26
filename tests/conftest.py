@@ -21,19 +21,17 @@ def app():
     flask_app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'connect_args': {
             'detect_types': sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES,
-            'isolation_level': None  # This enables autocommit mode
+            'isolation_level': None
         }
     }
     
-    # Set timezone support for SQLite connection
     def _fk_pragma_on_connect(dbapi_con, con_record):
         dbapi_con.execute('PRAGMA foreign_keys=ON')
-        # Enable timezone support
         dbapi_con.execute('PRAGMA timezone=UTC')
     
     with flask_app.app_context():
         from sqlalchemy import event
-        engine = db.get_engine()
+        engine = db.engine
         event.listen(engine, 'connect', _fk_pragma_on_connect)
         
         db.create_all()
@@ -110,10 +108,29 @@ def test_clip_segment(test_clip):
 def db_session(app):
     """Create a fresh database session for a test."""
     with app.app_context():
+        connection = db.engine.connect()
+        transaction = connection.begin()
+        
+        # Create a session bound to this connection
+        session = db.create_scoped_session(
+            options={"bind": connection, "binds": {}}
+        )
+        
+        # Replace the global session with our test session
+        old_session = db.session
+        db.session = session
+        
         db.create_all()
-        yield db.session
-        db.session.remove()
-        db.drop_all()
+        
+        yield session
+        
+        # Cleanup
+        transaction.rollback()
+        connection.close()
+        session.remove()
+        
+        # Restore the original session
+        db.session = old_session
 
 @pytest.fixture
 def populated_db(db_session, test_user, test_video, test_clip, test_folder, 
